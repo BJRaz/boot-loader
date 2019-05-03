@@ -2,7 +2,7 @@
 An extremely simple boot-loader - just as a learning project
 
 
-## build on Mac/Linux
+## build on Linux
 
 Run as root or "sudo" build_boot.sh
 
