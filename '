@@ -25,70 +25,38 @@ start:
 
 ; key-press
 
-	jmp 	main
-
 	mov 	ah,0x0		; function code 'key-press'
 	int	0x16		;
 
-	call 	enterstring
-
-	mov 	si,string
-
-	call 	print
-
-
-	mov	si,msg		; assign si address of msg 
-	
-	call	print			
-
-	mov 	si, msg2
-
-	call 	print
-; ***
-; Main loop
-; ***
-
-main:
-	
+; enter string
+enterstring:
+	mov 	si,0x0
 .loop
-	mov 	si,prompt
-	call	print
-
-	mov	ah,0x0		; key-press
+	mov 	ah,0x0
 	int	0x16
-	; echo char
+	
 	mov	ah,0x0e
 	int	0x10
 
+	cmp	al,0x10		; check for LF
+	jz	.exit
 
-	cmp	al,0x31		; compare for 1
-	jz	.enterstring
-
-	cmp	al,0x71		; compare for 'q'
-	jz 	halt
-	
-	mov	si,cr
-	call 	print
-	mov	si,menu
-	call 	print
-
-	;cmp	al,0x0d		; CR
-	;jz	.cr
-	
-	jmp	.cr
-
-	;jmp	.loop	
-.enterstring
-	call 	enterstring
-	mov	si,string
-	call 	print
-	jmp 	.loop
-
-	jmp 	halt		; exit
-.cr
-	mov	si,cr	
-	call 	print
 	jmp	.loop
+.exit
+	ret
+	
+
+
+	mov	si,msg		; assign si address of msg 
+
+	call print			
+
+	mov 	si, msg2
+
+	call print
+
+	jmp halt		; exit
+
 ; *** 
 ; prints chars to screen one by one until 0 has been reached
 ; *** 
@@ -102,37 +70,11 @@ print:
 
 .out
  	ret
-; enter string
-enterstring:
-	mov 	si,string
-.loop
-	mov 	ah,0x0		; enter char (key-press)
-	int	0x16
-	
-	cmp	al,0x0d		; check for CR
-	jz	.exit
 
-	mov	[si],al
-	inc	si
+halt:	hlt
 
-	mov	ah,0x0e
-	int	0x10
-
-	jmp	.loop
-.exit
-	ret
-	
-halt:	
-	mov	si,halted
-	call 	print
-	hlt
-
-cr:	db 0x0d,0x0a,0
-halted:	db "System halted",0
 msg:	db "Hello from Brians boot-sector",0x0D,0x0A,0
 msg2:	db "Message no. 2...",0x0D,0x0A,0
-menu:	db "1 for enter text, q for exit",0x0d,0x0a,0
-prompt:	db ">",0
 
 string:	times	16 db 0	; string buffer
 
