@@ -4,6 +4,15 @@ bits 	16
 ; start
 start:
 	cli
+	cld			; clear DF flag for auto-increment SI in string operations
+	mov	ax,0
+	;mov	cs,ax
+	mov	ds,ax		; clear segment registers
+	mov	ss,ax
+	mov	es,ax
+	mov 	fs,ax
+	mov 	gs,ax
+
 	mov	ch, 0		; show box shaped cursor..
 	mov	cl, 7
 	mov 	ah, 1
@@ -14,6 +23,9 @@ start:
 	mov	al,0x20		; write char (0x20 = space)
 	mov	bl,0x17		; attribute 17 = 0001 0111 a.k.a background (blue), and foreground (light gray)
 	int	0x10		; interrupt 10h
+
+	;jmp	main
+
 ;.insert_char
 	
 	;mov	al,0x42
@@ -75,11 +87,11 @@ ok:
 
 	call 	enterstring
 
-	call 	halt
+;	call 	halt
 
 
 
-;	jmp 	main		; forget main at this moment
+	jmp 	main		; forget main at this moment
 
 	mov 	ah,0x0		; function code 'key-press'
 	int	0x16		;
