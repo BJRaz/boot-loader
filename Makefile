@@ -12,6 +12,6 @@ floppy.img: boot.bin
 install: floppy.img
 	cp floppy.img /media/sf_VBoxLinuxShare/floppy_boot.img
 clean:
-	rm floppy.img
-	rm boot.bin
+	-rm floppy.img
+	-rm boot.bin
 	
