@@ -1,31 +1,7 @@
-org	0x7c00			; address labels originates from here .. this is an offset, and CS is 0 at boottime
+org	0x8000			; address labels originates from here .. this is an offset, and CS is 0 at boottime
 bits 	16
 
-; start
-start:
-	mov	esp,0xFFFFFF
-	;int	0x03		; debug
-	cli
-	cld			; clear DF flag for auto-increment SI in string operations
-	mov	ax,0
-	;mov	cs,ax
-	mov	ds,ax		; clear segment registers
-	mov	ss,ax		; set stack segment other than 0 before far calls, jmps etc... 
-	mov	es,ax
-	mov 	fs,ax
-	mov 	gs,ax
-
-	mov	ch, 0		; show box shaped cursor..
-	mov	cl, 7
-	mov 	ah, 1
-	int	0x10		; interrupt 10h - video services
-
-				; CLEAR SCREEN AND SET BACKGROUND COLOR..
-	mov	ah,0x9		; write char and attribute 
-	mov	cx,0x1000	; how many times 
-	mov	al,0x20		; write char (0x20 = space)
-	mov	bl,0x17		; attribute 17 = 0001 0111 a.k.a background (blue), and foreground (light gray)
-	int	0x10		; interrupt 10h - video services
+section .text
 misc:
 	mov	si,prompt
 	call 	print
@@ -34,20 +10,8 @@ misc:
 
 	call 	halt
 
-; *** 
-; prints chars to screen one by one until 0 has been reached
-; *** 
-print:	
-	lodsb
-	or	al,al
-	jz	.out
-	mov	ah,0x0E		; function code print char
-	int	0x10
-	jmp	print
+%include "print.asm"
 
-.out
-	mov	[string],ax
- 	ret
 ; enter string
 enterstring:
 	lea	di,[string]	; start clearing string-buffer, di points to start of string
@@ -158,6 +122,9 @@ halt:
 	mov	si,halted
 	call 	print
 	hlt
+
+section .data
+
 ;	ascii codes:
 ;	0x0d = CR (carrige return)
 ;	0x0a = LF (line feed)
@@ -172,13 +139,3 @@ bell:	db 0x07,0
 procedure: db 0x0
 
 string:	times	128 db 0	; string buffer
-
-
-
-
-; write zeros the first 510 (or from end of program to 510) bytes
-times 	510 - ($-$$)  db 0
-; magic numbers written at 511, 512 respectively (boot sector = first 512 bytes)
-dw	0x55AA
-
-
