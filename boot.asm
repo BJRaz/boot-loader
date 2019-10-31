@@ -8,7 +8,7 @@ section .text
 ; start
 start:
 	;int	0x03		; debug
-	cli
+	cli			; clear interrupt flag
 	cld			; clear DF flag for auto-increment SI in string operations
 	mov	ax,0
 	;mov	cs,ax
@@ -17,6 +17,9 @@ start:
 	mov	es,ax
 	mov 	fs,ax
 	mov 	gs,ax
+
+	mov	sp,0xff00	; setup stack
+	mov	bp,sp
 
 	mov	ch, 0		; show box shaped cursor..
 	mov	cl, 7
@@ -29,6 +32,32 @@ start:
 	mov	al,0x20		; write char (0x20 = space)
 	mov	bl,0x17		; attribute 17 = 0001 0111 a.k.a background (blue), and foreground (light gray)
 	int	0x10		; interrupt 10h - video services
+
+	mov	[databuffer], word 0x8000
+	
+	mov	ax,interrupt 
+
+	mov	word [es:0x80<<2], ax	; se intel manual, 3-462. Vol 2A, INT n... REAL-ADDRESS-MODE 
+	mov	[es:(0x80<<2)+2], ds 
+	; https://stackoverflow.com/questions/18879479/custom-irq-handler-in-real-mode
+
+	sti			; set interrupt flag
+
+	call 	diskops
+
+	;call 	0:0x8000	
+	int 	0x80
+
+	mov	si,done
+	call	print
+
+	
+
+	;mov	[0x80], byte 0x10
+	
+	jmp	0:0x8000	;0x8000	; test jump to program
+
+	hlt
 
 ; DISK OPERATIONS:
 ; read from floppy
@@ -51,17 +80,17 @@ diskops:
 	mov	dl,0		;
 	int	0x13		;
 .readdisk:
-
 	mov	ah,0x02
 	mov	al,2		; read 2 sectors (2 * 512 bytes)
 	mov	ch,0		; cylinder no 0    
 	mov	cl,2		; sector 	  no 2	(2 while bootsector is 1
 				;			and data is placed directly after bootsector)
+	
 	mov 	dh,0		; head 		  no 0
 	mov	dl,0		; drive 	  no 0 (1)
 	mov	bx,0
 	mov	es,bx		; set es = 0
-	mov	bx,0x8000	; set bx = addr. (in effect ES:BX = 0:offset)
+	mov	bx,[databuffer]	; set bx = addr. (in effect ES:BX = 0:offset)
 	int	0x13
 
 	cmp	ah,0
@@ -70,16 +99,18 @@ diskops:
 .diskreadok:
 	mov	si,readok
 	call 	print
-
-	
-	jmp	0:0x8000	; test jump to program
+	ret
 
 %include "print.asm"
 
-	hlt
-;section .data
-str:	times 128	db	0
-readok:	db 	"read ok",13,10,0
+interrupt:
+	; do something.
+	iret
 
-times	510 - ($-$$)	db 0
+;section .data
+readok:		db 	"Disk read ok",13,10,0
+done:		db	"Interrupt done",13,10,0
+databuffer:	dw	0
+
+times		510 - ($-$$)	db 0
 dw	0x55aa
