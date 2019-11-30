@@ -1,3 +1,6 @@
+### [0.1.3] 2019-10-31 
+### Added
+ - custom interrupt handler implemented, called when executing 'int 0x80' 
 ## [0.1.2] 2019-10-9 
 ### Added
  - boot2.asm, added this asm file for prototyping. Updated Makefile accordingly.

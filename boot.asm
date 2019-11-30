@@ -18,8 +18,12 @@ start:
 	mov 	fs,ax
 	mov 	gs,ax
 
-	mov	sp,0xff00	; setup stack
+	mov	sp,0x7b00	; setup stack
 	mov	bp,sp
+
+	mov	ah, 0		; SET VIDEO MODE
+	mov	al, 0x0d	; 640x480x16 (vga)
+	; int	0x10		; set video mode does not work in VBox ?!
 
 	mov	ch, 0		; show box shaped cursor..
 	mov	cl, 7
@@ -38,24 +42,20 @@ start:
 	mov	ax,interrupt 
 
 	mov	word [es:0x80<<2], ax	; se intel manual, 3-462. Vol 2A, INT n... REAL-ADDRESS-MODE 
-	mov	[es:(0x80<<2)+2], ds 
+	mov	[es:(0x80<<2)+2], ds	; bit-shifting by 2 equals *4 (times 4) 
 	; https://stackoverflow.com/questions/18879479/custom-irq-handler-in-real-mode
 
 	sti			; set interrupt flag
 
 	call 	diskops
 
-	;call 	0:0x8000	
 	int 	0x80
 
 	mov	si,done
 	call	print
-
-	
-
 	;mov	[0x80], byte 0x10
 	
-	jmp	0:0x8000	;0x8000	; test jump to program
+	jmp	0:0x8000	; jump to boot2 stage
 
 	hlt
 
@@ -105,12 +105,15 @@ diskops:
 
 interrupt:
 	; do something.
+	mov 	si,test
+	call	print
 	iret
 
 ;section .data
 readok:		db 	"Disk read ok",13,10,0
 done:		db	"Interrupt done",13,10,0
 databuffer:	dw	0
+test:		db	"This is test-text",13,10,0
 
 times		510 - ($-$$)	db 0
 dw	0x55aa
