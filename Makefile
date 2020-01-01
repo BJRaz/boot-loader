@@ -2,9 +2,9 @@ AS=nasm
 LOSETUP=losetup
 FLOPPYIMG=floppy.img
 	
-all:	boot.asm boot2.bin
+boot.bin: boot.asm 
 	$(AS) -f bin boot.asm -o boot.bin
-boot2.bin:	boot2.asm
+boot2.bin: boot2.asm
 	$(AS) -f bin boot2.asm -o boot2.bin
 floppy.img: boot.bin boot2.bin	
 	-$(LOSETUP) -d /dev/loop1

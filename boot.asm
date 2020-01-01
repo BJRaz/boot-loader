@@ -39,22 +39,16 @@ start:
 
 	mov	[databuffer], word 0x8000
 	
-	mov	ax,interrupt 
+	;mov	ax,timer		; - reinstate if needed.... (for scheduler)
+	;mov	word [es:0x1c<<2], ax	; 'listens' to timer ticks called from INT 8 (timer) 
+	;mov	[es:(0x1c<<2)+2], cs	; 
+	
 
-	mov	word [es:0x80<<2], ax	; se intel manual, 3-462. Vol 2A, INT n... REAL-ADDRESS-MODE 
-	mov	[es:(0x80<<2)+2], ds	; bit-shifting by 2 equals *4 (times 4) 
-	; https://stackoverflow.com/questions/18879479/custom-irq-handler-in-real-mode
-
+		
 	sti			; set interrupt flag
 
 	call 	diskops
 
-	int 	0x80
-
-	mov	si,done
-	call	print
-	;mov	[0x80], byte 0x10
-	
 	jmp	0:0x8000	; jump to boot2 stage
 
 	hlt
@@ -95,7 +89,7 @@ diskops:
 
 	cmp	ah,0
 	jz	.diskreadok
-
+	hlt	
 .diskreadok:
 	mov	si,readok
 	call 	print
@@ -103,17 +97,14 @@ diskops:
 
 %include "print.asm"
 
-interrupt:
-	; do something.
-	mov 	si,test
+timer:
+	mov	si, sched
 	call	print
 	iret
 
 ;section .data
 readok:		db 	"Disk read ok",13,10,0
-done:		db	"Interrupt done",13,10,0
+sched:		db	"Change task",13,10,0
 databuffer:	dw	0
-test:		db	"This is test-text",13,10,0
-
 times		510 - ($-$$)	db 0
 dw	0x55aa
