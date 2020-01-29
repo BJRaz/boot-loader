@@ -14,4 +14,4 @@ install: floppy.img
 clean:
 	-rm floppy.img
 	-rm boot.bin
-	
+	-rm boot2.bin	
