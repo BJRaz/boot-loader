@@ -39,9 +39,10 @@ start:
 
 	mov	[databuffer], word 0x8000
 	
-	;mov	ax,timer		; - reinstate if needed.... (for scheduler)
-	;mov	word [es:0x1c<<2], ax	; 'listens' to timer ticks called from INT 8 (timer) 
-	;mov	[es:(0x1c<<2)+2], cs	; 
+	mov	ax,timer		; - reinstate if needed.... (for scheduler)
+	mov	word [es:0x1c<<2], ax	; 'listens' to timer ticks called from INT 8 (timer) 
+	mov	[es:(0x1c<<2)+2], cs	; int 1c (28) System Timer Tick
+					; https://www.shsu.edu/csc_tjm/spring2001/cs272/interrupt.html
 	
 
 		
@@ -98,8 +99,17 @@ diskops:
 %include "print.asm"
 
 timer:
+	push	si
+	push 	ax
+	push	ds
+	xor 	ax,ax
+	mov	ds,ax		; set ds to 0, while ds has value of 0x0040 for some reason
+				; check why online !
 	mov	si, sched
 	call	print
+	pop	ds
+	pop	ax
+	pop	si
 	iret
 
 ;section .data
