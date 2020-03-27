@@ -114,7 +114,7 @@ timer:
 
 ;section .data
 readok:		db 	"Disk read ok",13,10,0
-sched:		db	"Change task",13,10,0
+sched:		db	"Change task interrupt",13,10,0
 databuffer:	dw	0
 times		510 - ($-$$)	db 0
 dw	0x55aa
