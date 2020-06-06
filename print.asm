@@ -14,3 +14,14 @@ print:
 .out:
  	ret
 	
+println:
+	push	word bp
+	mov 	bp, sp
+	push	si
+	mov	si, [bp+4]
+	call	print
+
+	pop	si
+	mov	sp, bp
+	pop	word bp
+	ret

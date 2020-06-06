@@ -1,0 +1,60 @@
+!_TAG_FILE_FORMAT	2	/extended format; --format=1 will not append ;" to lines/
+!_TAG_FILE_SORTED	1	/0=unsorted, 1=sorted, 2=foldcase/
+!_TAG_PROGRAM_AUTHOR	Darren Hiebert	/dhiebert@users.sourceforge.net/
+!_TAG_PROGRAM_NAME	Exuberant Ctags	//
+!_TAG_PROGRAM_URL	http://ctags.sourceforge.net	/official site/
+!_TAG_PROGRAM_VERSION	5.8	//
+bell	boot2.asm	/^bell:	db 0x07,0$/;"	d
+bits	boot.asm	/^bits 	16$/;"	l
+bits	boot2.asm	/^bits 	16$/;"	l
+bits	interrupt.asm	/^bits	16$/;"	l
+bits	program.asm	/^bits 	16$/;"	l
+cr	boot2.asm	/^cr:	db 0x0d,0x0a,0$/;"	d
+crs	boot2.asm	/^crs:$/;"	l
+databuffer	boot.asm	/^databuffer:	dw	0	$/;"	d
+diskops	boot.asm	/^diskops:$/;"	l
+div	boot2.asm	/^	div	dl$/;"	d
+div0	boot2.asm	/^div0:		db 	"Division by zero exception!",13,10,0$/;"	d
+divisionbyzero	boot2.asm	/^divisionbyzero:$/;"	l
+divisor	boot.asm	/^divisor:	dw	0x12	; 18$/;"	d
+done	boot2.asm	/^done:		db	"Interrupt done",13,10,0$/;"	d
+dw	boot.asm	/^dw	0x55aa$/;"	l
+enterstring	boot2.asm	/^enterstring:$/;"	l
+halt	boot2.asm	/^halt:$/;"	l
+halted	boot2.asm	/^halted:	db "System halted",0$/;"	d
+inc	boot2.asm	/^	inc	dl		; inc position by one$/;"	d
+interrupt	boot2.asm	/^interrupt:$/;"	l
+keyb	boot.asm	/^keyb:		db	"keyboard pressed",13,10,0$/;"	d
+keyboard	boot.asm	/^keyboard:$/;"	l
+mainloop	boot.asm	/^mainloop:$/;"	l
+menu	boot2.asm	/^menu:	db "1 for enter text, q for exit",0x0d,0x0a,0$/;"	d
+misc	boot2.asm	/^misc:$/;"	l
+mov	boot2.asm	/^mov	si,halted$/;"	l
+msg	boot2.asm	/^msg:	db "Hello from Brians boot-sector",0x0D,0x0A,0$/;"	d
+msg2	boot2.asm	/^msg2:	db "Message no. 2...",0x0D,0x0A,0$/;"	d
+org	boot.asm	/^org	0x7c00			; address labels originates from here .. this is an offset, and CS is 0 at boottime$/;"	l
+org	boot2.asm	/^org	0x8000			; address labels originates from here .. this is an offset, and CS is 0 at boottime$/;"	l
+org	interrupt.asm	/^org	0x8000$/;"	l
+org	program.asm	/^org 	0x7e00$/;"	l
+pop	boot.asm	/^	pop	ds$/;"	d
+pop	boot.asm	/^	pop	dx$/;"	d
+print	print.asm	/^print:	$/;"	l
+println	print.asm	/^println:$/;"	l
+procedure	boot2.asm	/^procedure: db 0x0$/;"	d
+prompt	boot2.asm	/^prompt:	db "> ",0$/;"	d
+push	boot.asm	/^	push	ds		; this routine (roughly) counts ticks (55 ms) and writes to screen for every second passed $/;"	d
+push	boot.asm	/^	push	dx$/;"	d
+readok	boot.asm	/^readok:		db 	"Disk read ok",13,10,0$/;"	d
+readok	boot2.asm	/^readok	db "read ok",0x0d,0x0a,0$/;"	d
+result	boot2.asm	/^result:	times 2	db	0$/;"	l
+sched	boot.asm	/^sched:		db	"Change task interrupt",13,10,0$/;"	d
+section	boot.asm	/^section .text$/;"	l
+section	boot2.asm	/^section .data$/;"	l
+section	boot2.asm	/^section .text$/;"	l
+start	boot.asm	/^start:$/;"	l
+start	program.asm	/^start:$/;"	l
+string	boot2.asm	/^string:	times	128 db 0	; string buffer$/;"	l
+test	boot2.asm	/^test:		db	"Called from 0x80 interrupt (internal test)",13,10,0$/;"	d
+ticks	boot.asm	/^ticks:		dw	1$/;"	d
+timer	boot.asm	/^timer:$/;"	l
+times	boot.asm	/^times		510 - ($-$$)	db 0$/;"	l

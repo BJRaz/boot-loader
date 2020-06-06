@@ -18,12 +18,14 @@ start:
 	mov 	fs,ax
 	mov 	gs,ax
 
-	mov	sp,0x7b00	; setup stack
+	mov	sp,(0x7c00-1)	; setup stack
 	mov	bp,sp
-
+; **********************
+;	SET VIDEO MODE
+; **********************
 	mov	ah, 0		; SET VIDEO MODE
-	mov	al, 0x0d	; 640x480x16 (vga)
-	; int	0x10		; set video mode does not work in VBox ?!
+	mov	al, 0x03	; 0x0d: 320x200x16 graphics, 0x12:640x480x16 graphics
+	int	0x10		; set video mode does weird stuff (check) ?!
 
 	mov	ch, 0		; show box shaped cursor..
 	mov	cl, 7
@@ -36,16 +38,10 @@ start:
 	mov	al,0x20		; write char (0x20 = space)
 	mov	bl,0x17		; attribute 17 = 0001 0111 a.k.a background (blue), and foreground (light gray)
 	int	0x10		; interrupt 10h - video services
+	
 
 	mov	[databuffer], word 0x8000
-	
-	mov	ax,timer		; - reinstate if needed.... (for scheduler)
-	mov	word [es:0x1c<<2], ax	; 'listens' to timer ticks called from INT 8 (timer) 
-	mov	[es:(0x1c<<2)+2], cs	; int 1c (28) System Timer Tick
-					; https://www.shsu.edu/csc_tjm/spring2001/cs272/interrupt.html
-	
-
-		
+				; http://staff.ustc.edu.cn/~xyfeng/research/cos/resources/BIOS/Resources/assembly/int1c.html
 	sti			; set interrupt flag
 
 	call 	diskops
@@ -92,29 +88,16 @@ diskops:
 	jz	.diskreadok
 	hlt	
 .diskreadok:
-	mov	si,readok
-	call 	print
+	;mov	si,readok
+	push	readok
+	call 	println
+	pop	cx
 	ret
 
 %include "print.asm"
 
-timer:
-	push	si
-	push 	ax
-	push	ds
-	xor 	ax,ax
-	mov	ds,ax		; set ds to 0, while ds has value of 0x0040 for some reason
-				; check why online !
-	mov	si, sched
-	call	print
-	pop	ds
-	pop	ax
-	pop	si
-	iret
-
 ;section .data
 readok:		db 	"Disk read ok",13,10,0
-sched:		db	"Change task interrupt",13,10,0
-databuffer:	dw	0
+databuffer:	dw	0	
 times		510 - ($-$$)	db 0
 dw	0x55aa
