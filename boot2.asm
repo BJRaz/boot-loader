@@ -10,20 +10,21 @@ section .text
 	mov	word [es:0x0<<2], ax	; tries to add interrupt routine for  
 	mov	[es:(0x0<<2)+2], cs	; devision by zero (interrupt vector index 0)
 
-	;mov	ax, keyboard 
-	;mov	word [es:0x09<<2], ax	; REAL-ADDRESS-MODE - keyborad (irq 1) maps to vector 0x09 
-	;mov	[es:(0x09<<2)+2], cs	; 
+	mov	ax, keyboard 
+	mov	word [es:0x09<<2], ax	; REAL-ADDRESS-MODE - keyborad (irq 1) maps to vector 0x09 
+	mov	[es:(0x09<<2)+2], cs	; 
 	
 	mov	ax,interrupt 
 	mov	word [es:0x80<<2], ax	; se intel manual, 3-482. Vol 2A, INT n... REAL-ADDRESS-MODE 
 	mov	[es:(0x80<<2)+2], cs	;  
 	
-	;mov	ax,timer		; - reinstate if needed.... (for scheduler)
-	;mov	word [es:0x1c<<2], ax	; 'listens' to timer ticks called from INT 8 (RTC timer) 
-	;mov	[es:(0x1c<<2)+2], cs	; int 1c (28) System Timer Tick
+	mov	ax,timer		; - reinstate if needed.... (for scheduler)
+	mov	word [es:0x1c<<2], ax	; 'listens' to timer ticks called from INT 8 (RTC timer) 
+	mov	[es:(0x1c<<2)+2], cs	; int 1c (28) System Timer Tick
 
 					; locally defined interrupt	
 
+	sti	 			; restore interrupts
 					; https://stackoverflow.com/questions/18879479/custom-irq-handler-in-real-mode
 	int 	0x80			; calls locally defined interrupt.
 
@@ -33,23 +34,35 @@ section .text
 ; initialize keybord controller (TODO)
 ; ****************
 
-	sti	 			; restore interrupts
 
 misc:
 	mov	si,prompt
 	call 	print
+	call 	ring_buffer_init
+	push	word [hest]
+	call	ring_buffer_insert
 
-	call 	enterstring
+	;call 	enterstring
 mainloop:
 	;push	done
 	;call	println 	
-;	jmp	mainloop
+	;jmp	mainloop
 
-	call 	halt
+	;call 	halt
+	mov	si,halted
+	call 	print
+halt:
+	hlt
+	jmp 	halt	
 
 %include "print.asm"
 
-; enter string
+; ****************
+; enterstring
+;
+; function calls bios code handlers
+; not to be used as interrupthandler
+; ****************
 enterstring:
 	lea	di,[string]	; start by clearing string-buffer, di points to start of string
 	xor	ax,ax		; sets ax = 0
@@ -159,6 +172,49 @@ enterstring:
 .escape:
 	int	0x80
 	jmp	.loop
+; ***********
+; RINGBUFFER
+; ***********
+ring_buffer_init:
+	pusha
+	mov	ax, rb
+	mov	[rb_head], word 0 
+	mov	[rb_tail], word 0
+	popa
+	ret
+ring_buffer_insert:
+	push	bp
+	mov	bp, sp
+	push	ax
+	push	bx
+	
+	mov 	ax, [bp+4]
+	mov	bx, [rb_head]
+	mov	[rb+bx], ax
+	inc	word [rb_head]
+
+	pop	bx
+	pop	ax
+	pop	bp
+	ret
+ring_buffer_get:
+; TODO - not finished
+	push	bp
+	mov	bp, sp
+	push	bx
+	mov	ax, 0
+	mov	bx, [rb_tail]	
+	cmp	bx, [rb_head] 
+	je	.end
+	mov	ax, [rb+bx]
+	inc	word [rb_tail]
+.end:
+	pop	bx
+	pop	bp
+	ret
+	
+
+
 ; *********************
 ; INTERRUPT HANDLERS
 ; *********************
@@ -178,11 +234,7 @@ divisionbyzero:
 	jmp	misc	
 
 timer:
-	push	si
-	push 	ax
-	push	bx
-	push 	cx
-	push	dx
+	pusha			; push all gp registers etc.
 	push	ds		; this routine (roughly) counts ticks (55 ms) and writes to screen for every second passed 
 	xor 	ax,ax		; reset ax
 	mov	ds,ax		; set ds to 0, while ds has value of 0x0040 for some reason
@@ -196,31 +248,39 @@ timer:
 	cmp	dx, 0		;
 	jne	.end
 	;mov	si, sched	;ticks	 sched
-	push	sched
+	push	sched		; TODO - use as debug only
+	call	println
+	pop	cx
+
+	call	ring_buffer_get
+	cmp	ax, 0
+	je	.end
+	push	hest		; TODO - use as debug only  
 	call	println
 	pop	cx
 .end:
 	mov	[ticks], bx
 	pop	ds
-	pop	dx
-	pop 	cx
-	pop	bx
-	pop	ax
-	pop	si
+	popa
 	iret
 keyboard:
 	;push	bp	
 	;mov	bp, sp
 	push	ax
 	push	bx
+	push	dx
+	mov	dx, 0x1e
 	push	si
 	in	al, 0x60		; read info from keyboard
 	mov	bl, al
+	push	dx	
+	call 	ring_buffer_insert
+	pop	dx
 	cmp	bl, 0x1e		; 'A'
 	je	.a
 	cmp	bl, 0x39		; 'space'
 	je	.space
-	push	keydefault	
+	push	hest2			; TODO - change back to	keydefault	
 	call 	println		
 	pop	cx	
 	jmp	.out
@@ -235,6 +295,7 @@ keyboard:
 .out:
 	mov	al, 0x20		; acknowledge to PIC (EOI)
 	out	0x20, al
+	pop	dx
 	pop	si
 	pop	bx
 	pop	ax
@@ -246,11 +307,6 @@ crs:
 	mov	si,cr	
 	call 	print
 	ret
-halt:
-mov	si,halted
-	call 	print
-	hlt
-
 section .data
 
 ;	ascii codes:
@@ -274,7 +330,13 @@ divisor:	dw	0x12	; 18
 sched:		db	"Change task interrupt",13,10,0
 keyb:		db	"Some key pressed",13,10,0
 keydefault	db 	"Another key pressed", 13, 10 ,0
-buffer:	times	128 db 0	; string buffer
+buffer:	times	128 db  0	; string buffer
+hest:		db	"A"	
+rb: times	50  db	0	; ring buffer
+rb_size:	db	0
+rb_head:	dw	0
+rb_tail:	dw	0
+hest2:		db	"B",0	
 
 section	.bss
 string:		resb	128	
