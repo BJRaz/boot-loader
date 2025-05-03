@@ -285,6 +285,21 @@ keyboard:
 	pop	cx	
 	jmp	.out
 .a:
+	push	ax
+	cmp	byte [display], 0
+	je	.shift
+	mov	ah, 0
+	mov	al, 0x03
+	int	0x10
+	mov	byte [display], 0
+	jmp	.end
+.shift:	
+	mov	ah, 0
+	mov	al, 0x12
+	int	0x10
+	mov	byte [display], 1
+.end:
+	pop	ax		
 	push 	keyb	
 	call 	println
 	pop	ax
@@ -337,6 +352,8 @@ rb_size:	db	0
 rb_head:	dw	0
 rb_tail:	dw	0
 hest2:		db	"B",0	
+display:	db	0
+
 
 section	.bss
 string:		resb	128	
