@@ -10,17 +10,17 @@ section .text
 	mov	word [es:0x0<<2], ax	; tries to add interrupt routine for  
 	mov	[es:(0x0<<2)+2], cs	; devision by zero (interrupt vector index 0)
 
-	;mov	ax, keyboard 
-	;mov	word [es:0x09<<2], ax	; REAL-ADDRESS-MODE - keyborad (irq 1) maps to vector 0x09 
-	;mov	[es:(0x09<<2)+2], cs	; 
+	mov	ax, keyboard 
+	mov	word [es:0x09<<2], ax	; REAL-ADDRESS-MODE - keyborad (irq 1) maps to vector 0x09 
+	mov	[es:(0x09<<2)+2], cs	; 
 	
 	mov	ax,interrupt 
 	mov	word [es:0x80<<2], ax	; se intel manual, 3-482. Vol 2A, INT n... REAL-ADDRESS-MODE 
 	mov	[es:(0x80<<2)+2], cs	;  
 	
-	;mov	ax,timer		; - reinstate if needed.... (for scheduler)
-	;mov	word [es:0x1c<<2], ax	; 'listens' to timer ticks called from INT 8 (RTC timer) 
-	;mov	[es:(0x1c<<2)+2], cs	; int 1c (28) System Timer Tick
+	mov	ax,timer		; - reinstate if needed.... (for scheduler)
+	mov	word [es:0x1c<<2], ax	; 'listens' to timer ticks called from INT 8 (RTC timer) 
+	mov	[es:(0x1c<<2)+2], cs	; int 1c (28) System Timer Tick
 
 					; locally defined interrupt	
 
@@ -39,13 +39,18 @@ misc:
 	mov	si,prompt
 	call 	print
 
-	call 	enterstring
+;	call 	enterstring
 mainloop:
 	;push	done
 	;call	println 	
-;	jmp	mainloop
-
-	call 	halt
+	;jmp	mainloop
+	;call 	halt
+halt:
+	mov	si,halted
+	call 	print
+	hlt
+	jmp	halt		; loop back to "halt", needed if an exception returns with IRET
+				; points to hlt + 1
 
 %include "print.asm"
 
@@ -246,25 +251,20 @@ crs:
 	mov	si,cr	
 	call 	print
 	ret
-halt:
-mov	si,halted
-	call 	print
-	hlt
-
 section .data
 
 ;	ascii codes:
 ;	0x0d = CR (carrige return)
 ;	0x0a = LF (line feed)
-readok		db "read ok",0x0d,0x0a,0
-cr:		db 0x0d,0x0a,0
-halted:		db "System halted",0
-msg:		db "Hello from Brians boot-sector",0x0D,0x0A,0
-msg2:		db "Message no. 2...",0x0D,0x0A,0
-menu:		db "1 for enter text, q for exit",0x0d,0x0a,0
-prompt:		db "> ",0
-bell:		db 0x07,0
-procedure: 	db 0x0
+readok:		db 	"read ok",0x0d,0x0a,0
+cr:		db 	0x0d,0x0a,0
+halted:		db 	"System halted",0
+msg:		db 	"Hello from Brians boot-sector",0x0D,0x0A,0
+msg2:		db 	"Message no. 2...",0x0D,0x0A,0
+menu:		db 	"1 for enter text, q for exit",0x0d,0x0a,0
+prompt:		db 	"> ",0
+bell:		db	0x07,0
+procedure: 	db 	0x0
 test:		db	"Called from 0x80 interrupt (internal test)",13,10,0
 div0:		db 	"Division by zero exception!",13,10,0
 done:		db	"Interrupt done",13,10,0
@@ -273,7 +273,7 @@ ticks:		dw	1
 divisor:	dw	0x12	; 18
 sched:		db	"Change task interrupt",13,10,0
 keyb:		db	"Some key pressed",13,10,0
-keydefault	db 	"Another key pressed", 13, 10 ,0
+keydefault:	db 	"Another key pressed", 13, 10 ,0
 buffer:	times	128 db 0	; string buffer
 
 section	.bss
