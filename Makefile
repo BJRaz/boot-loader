@@ -1,19 +1,48 @@
 AS=nasm
 ASFLAGS=-f bin
-FLOPPYIMG=floppy.img
+BOOT_IMAGE=floppy.img
 BINDIR=bin
-OBJS=$(addprefix $(BINDIR)/, boot.bin boot2.bin interrupt.bin print.bin program.bin)
+OBJS=$(addprefix $(BINDIR)/, boot.bin boot2.bin)
 
-all:	$(OBJS)  
-	dd if=$(BINDIR)/boot.bin of=$(FLOPPYIMG) bs=512 conv=notrunc
-	dd if=$(BINDIR)/boot2.bin of=$(FLOPPYIMG) bs=512 seek=1 conv=notrunc
-$(BINDIR)/%.bin: %.asm | $(BINDIR) 
-	$(AS) $(ASFLAGS) -o $@ $< 
-$(BINDIR): 
-	mkdir bin
-$(FLOPPYIMG):
-	dd if=/dev/zero of=$(FLOPPYIMG) bs=1024 count=1440
+# VirtualBox VM name
+VM_NAME=boot-loader
+
+.PHONY: all clean run run-vbox
+
+all: $(BOOT_IMAGE)
+
+# Create properly sized floppy image (1.44 MB)
+$(BOOT_IMAGE): $(OBJS)
+	dd if=/dev/zero of=$(BOOT_IMAGE) bs=512 count=2880
+	dd if=$(BINDIR)/boot.bin of=$(BOOT_IMAGE) bs=512 conv=notrunc
+	dd if=$(BINDIR)/boot2.bin of=$(BOOT_IMAGE) bs=512 seek=1 conv=notrunc
+
+# boot2.bin depends on print.asm due to %include directive
+$(BINDIR)/boot2.bin: boot2.asm print.asm | $(BINDIR)
+	$(AS) $(ASFLAGS) -o $@ $<
+
+$(BINDIR)/%.bin: %.asm | $(BINDIR)
+	$(AS) $(ASFLAGS) -o $@ $<
+
+$(BINDIR):
+	mkdir -p $(BINDIR)
+
+# Create initial floppy image (1.44 MB)
+floppy-image: $(BOOT_IMAGE)
+
+# Run bootloader with QEMU (if available)
+run: $(BOOT_IMAGE)
+	qemu-system-i386 -fda $(BOOT_IMAGE) 2>/dev/null || echo "QEMU not found. Use 'make run-vbox' for VirtualBox instead."
+
+# Run bootloader with VirtualBox using existing VM
+run-vbox: $(BOOT_IMAGE)
+	@echo "Attaching floppy image to $(VM_NAME)..."
+	VBoxManage storageattach $(VM_NAME) --storagectl "Floppy" --port 0 --device 0 --type fdd --medium $(PWD)/$(BOOT_IMAGE)
+	@echo "Starting VM in debug mode (GDB on localhost:5037)..."
+	VBoxManage modifyvm $(VM_NAME) --guest-debug-provider=gdb --guest-debug-io-provider=tcp --guest-debug-address=localhost --guest-debug-port=5037
+	VBoxManage startvm $(VM_NAME) --type gui
+
 clean:
-	-rm -rf $(FLOPPYIMG)
-	-rm -rf $(BINDIR) 
+	rm -rf $(BOOT_IMAGE) $(BINDIR)
+
 

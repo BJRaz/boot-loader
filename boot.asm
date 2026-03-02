@@ -1,6 +1,24 @@
 org	0x7c00			; address labels originates from here .. this is an offset, and CS is 0 at boottime
 bits 	16
 
+; **********************
+; Constants
+; **********************
+BOOT2_ADDR	equ 0x8000		; boot2 stage load address
+STACK_TOP	equ 0x7c00 - 1		; stack grows downward from boot code
+VIDEO_MODE	equ 0x03		; 80x25 text mode
+CURSOR_START	equ 0x00		; cursor start scanline
+CURSOR_END	equ 0x07		; cursor end scanline
+VRAM_ATTR	equ 0x17		; background blue, foreground light gray (0001 0111b)
+SCREEN_SIZE	equ 0x1000		; number of iterations for screen clear
+SPACE_CHAR	equ 0x20		; space character
+
+; Disk operation constants
+SECTORS_TO_READ	equ 2
+CYLINDER		equ 0
+SECTOR			equ 2			; sector 2 (boot sector is 1)
+HEAD			equ 0
+DRIVE			equ 0
 
 section .text
 
@@ -10,43 +28,53 @@ start:
 	;int	0x03		; debug
 	cli			; clear interrupt flag
 	cld			; clear DF flag for auto-increment SI in string operations
-	mov	ax,0
-	;mov	cs,ax
-	mov	ds,ax		; clear segment registers
-	mov	ss,ax		; set stack segment other than 0 before far calls, jmps etc... 
-	mov	es,ax
-	mov 	fs,ax
-	mov 	gs,ax
+	xor	ax, ax		; clear AX (faster than mov ax, 0)
+	mov	ds, ax		; clear segment registers
+	mov	ss, ax		; set stack segment
+	mov	es, ax
+	mov	fs, ax
+	mov	gs, ax
 
-	mov	sp,(0x7c00-1)	; setup stack
-	mov	bp,sp
+	mov	sp, STACK_TOP	; setup stack
+	mov	bp, sp
+
+	; Debug: Print bootloader initialized message
+	mov	si, msg_boot_start
+	call	print
 ; **********************
 ;	SET VIDEO MODE
 ; **********************
-	mov	ah, 0		; SET VIDEO MODE
-	mov	al, 0x03	; 0x0d: 320x200x16 graphics, 0x12:640x480x16 graphics
-	int	0x10		; set video mode does weird stuff (check) ?!
+	mov	ah, 0			; SET VIDEO MODE
+	mov	al, VIDEO_MODE		; 80x25 text mode
+	int	0x10			; set video mode
 
-	mov	ch, 0		; show box shaped cursor..
-	mov	cl, 7
-	mov 	ah, 1
-	int	0x10		; interrupt 10h - video services
+	; Debug: Print video mode set
+	mov	si, msg_video_set
+	call	print
 
-				; CLEAR SCREEN AND SET BACKGROUND COLOR..
-	mov	ah,0x9		; write char and attribute 
-	mov	cx,0x1000	; how many times 
-	mov	al,0x20		; write char (0x20 = space)
-	mov	bl,0x17		; attribute 17 = 0001 0111 a.k.a background (blue), and foreground (light gray)
-	int	0x10		; interrupt 10h - video services
+	mov	ch, CURSOR_START	; show box shaped cursor
+	mov	cl, CURSOR_END
+	mov	ah, 1
+	int	0x10			; interrupt 10h - video services
+
+	; Debug: Print cursor set
+	mov	si, msg_cursor_set
+	call	print
+
+				; CLEAR SCREEN using BIOS
+	mov	ah, 0x9		; write char and attribute 
+	mov	cx, SCREEN_SIZE	; how many times 
+	mov	al, SPACE_CHAR	; write space character
+	mov	bl, VRAM_ATTR	; background blue, foreground light gray
+	int	0x10			; interrupt 10h - video services
 	
-
-	mov	[databuffer], word 0x8000
+	mov	[databuffer], word BOOT2_ADDR
 				; http://staff.ustc.edu.cn/~xyfeng/research/cos/resources/BIOS/Resources/assembly/int1c.html
 	sti			; set interrupt flag
 
-	call 	diskops
+	call	diskops
 
-	jmp	0:0x8000	; jump to boot2 stage
+	jmp	BOOT2_ADDR		; jump to boot2 stage
 
 	hlt
 
@@ -67,37 +95,59 @@ start:
 ;	al			no of sectors transferred
 ;	note:			each sector = 512 bytes
 diskops:
-	mov	ah,0		; do reset on drive
-	mov	dl,0		;
-	int	0x13		;
-.readdisk:
-	mov	ah,0x02
-	mov	al,2		; read 2 sectors (2 * 512 bytes)
-	mov	ch,0		; cylinder no 0    
-	mov	cl,2		; sector 	  no 2	(2 while bootsector is 1
-				;			and data is placed directly after bootsector)
-	
-	mov 	dh,0		; head 		  no 0
-	mov	dl,0		; drive 	  no 0 (1)
-	mov	bx,0
-	mov	es,bx		; set es = 0
-	mov	bx,[databuffer]	; set bx = addr. (in effect ES:BX = 0:offset)
+	mov	ah, 0		; reset drive
+	mov	dl, DRIVE
 	int	0x13
 
-	cmp	ah,0
+	; Debug: Print disk reset done
+	mov	si, msg_disk_reset
+	call	print
+
+.readdisk:
+	mov	ah, 0x02		; read sector function
+	mov	al, SECTORS_TO_READ
+	mov	ch, CYLINDER	; cylinder/track number
+	mov	cl, SECTOR	; sector number (2 - boot sector is 1)
+	mov	dh, HEAD	; head/side number
+	mov	dl, DRIVE	; drive number
+	mov	bx, 0
+	mov	es, bx		; set es = 0
+	mov	bx, [databuffer]; set bx = address (ES:BX = 0:offset)
+	int	0x13
+
+	cmp	ah, 0
 	jz	.diskreadok
+
+	; Debug: Print disk read error
+	mov	si, msg_disk_error
+	call	print
 	hlt	
+
 .diskreadok:
-	;mov	si,readok
+	; Debug: Print disk read success
+	mov	si, msg_disk_ok
+	call	print
+
+	; Debug: Print boot2 jump message
+	mov	si, msg_boot2_jump
+	call	print
+
 	push	readok
-	call 	println
+	call	println
 	pop	cx
 	ret
 
 %include "print.asm"
 
 ;section .data
-readok:		db 	"Disk read ok",13,10,0
-databuffer:	dw	0	
-times		510 - ($-$$)	db 0
+msg_boot_start:		db	"[BOOT] Stage 1 initialized",13,10,0
+msg_video_set:		db	"[BOOT] Video mode set (80x25)",13,10,0
+msg_cursor_set:		db	"[BOOT] Cursor configured",13,10,0
+msg_disk_reset:		db	"[BOOT] Disk reset complete",13,10,0
+msg_disk_ok:		db	"[BOOT] Boot2 loaded successfully",13,10,0
+msg_disk_error:		db	"[BOOT] ERROR: Failed to read disk!",13,10,0
+msg_boot2_jump:		db	"[BOOT] Jumping to stage 2 at 0x8000...",13,10,0
+readok:			db 	"Disk read ok",13,10,0
+databuffer:		dw	0	
+times			510 - ($-$$)	db 0
 dw	0x55aa
