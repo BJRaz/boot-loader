@@ -46,45 +46,48 @@ run_warning() {
 
 echo -e "${YELLOW}=== Boot-Loader Code Quality Tests ===${NC}\n"
 
+SRCDIR="$TEST_DIR/src"
+INCDIR="$TEST_DIR/include"
+
 # Test 1: Check for proper section declarations
-run_test "Section declarations present" "grep -q 'section .text' boot.asm && grep -q 'section .data' boot.asm"
+run_test "Section declarations present" "grep -q 'section .text' $SRCDIR/boot.asm && grep -q 'section .data' $SRCDIR/boot.asm"
 
 # Test 2: Check for org directive
-run_test "Origin address defined" "grep -q 'org' boot.asm && grep -q 'org' boot2.asm"
+run_test "Origin address defined" "grep -q 'org' $SRCDIR/boot.asm && grep -q 'org' $SRCDIR/boot2.asm"
 
 # Test 3: Check for bits 16 declaration
-run_test "16-bit mode specified" "grep -q 'bits.*16' boot.asm && grep -q 'bits.*16' boot2.asm"
+run_test "16-bit mode specified" "grep -q 'bits.*16' $SRCDIR/boot.asm && grep -q 'bits.*16' $SRCDIR/boot2.asm"
 
 # Test 4: Check for label definitions
-run_test "Labels defined (diskops)" "grep -q '^diskops:' boot.asm"
+run_test "Labels defined (diskops)" "grep -q '^diskops:' $SRCDIR/boot.asm"
 
 # Test 5: Check for subroutine ret instructions
-run_test "Return instructions present" "grep -q '^.*ret$' print.asm"
+run_test "Return instructions present" "grep -q '^.*ret$' $INCDIR/print.asm"
 
 # Test 6: Verify constants use EQU
-run_test "Constants defined with EQU" "grep -q 'equ' boot.asm && grep -q 'equ' boot2.asm"
+run_test "Constants defined with EQU" "grep -q 'equ' $SRCDIR/boot.asm && grep -q 'equ' $SRCDIR/boot2.asm"
 
 # Test 7: Check for comment density
-run_test "Comments present" "grep -q ';' boot.asm && grep -q ';' boot2.asm"
+run_test "Comments present" "grep -q ';' $SRCDIR/boot.asm && grep -q ';' $SRCDIR/boot2.asm"
 
 # Test 8: Verify macro usage consistency
-run_test "Macro definitions used" "grep -q '%macro' boot2.asm"
+run_test "Macro definitions used" "grep -q '%macro' $SRCDIR/boot2.asm"
 
 # Test 9: Check stack operations
-run_test "Stack setup in boot.asm" "grep -q 'mov.*sp' boot.asm"
+run_test "Stack setup in boot.asm" "grep -q 'mov.*sp' $SRCDIR/boot.asm"
 
 # Test 10: Verify register preservation patterns
-run_test "Register preservation (push/pop)" "grep -q 'push' boot2.asm && grep -q 'pop' boot2.asm"
+run_test "Register preservation (push/pop)" "grep -q 'push' $SRCDIR/boot2.asm && grep -q 'pop' $SRCDIR/boot2.asm"
 
 # Warnings - non-fatal issues
 echo ""
 echo -e "${BLUE}=== Code Quality Warnings ===${NC}"
 
-run_warning "Commented-out code" "grep -q '^[[:space:]]*;.*call' boot2.asm"
+run_warning "Commented-out code" "grep -q '^[[:space:]]*;.*call' $SRCDIR/boot2.asm"
 
-run_warning "TODO markers" "grep -i -q 'TODO' boot2.asm"
+run_warning "TODO markers" "grep -i -q 'TODO' $SRCDIR/boot2.asm"
 
-run_warning "Magic numbers (check for constants)" "grep -qE 'mov.*[0-9]{3,}' boot.asm"
+run_warning "Magic numbers (check for constants)" "grep -qE 'mov.*[0-9]{3,}' $SRCDIR/boot.asm"
 
 # Print summary
 echo ""

@@ -59,44 +59,47 @@ run_test_output() {
 
 echo -e "${YELLOW}=== Boot-Loader Test Suite ===${NC}\n"
 
+SRCDIR="$TEST_DIR/src"
+INCDIR="$TEST_DIR/include"
+
 # Test 1: Check if assembler is available
 run_test "NASM assembler available" "which nasm"
 
 # Test 2: Verify boot.asm syntax
-run_test "boot.asm syntax check" "nasm -f bin boot.asm -o /tmp/boot_test.bin"
+run_test "boot.asm syntax check" "nasm -f bin -I $INCDIR $SRCDIR/boot.asm -o /tmp/boot_test.bin"
 
 # Test 3: Verify boot2.asm syntax
-run_test "boot2.asm syntax check" "nasm -f bin boot2.asm -o /tmp/boot2_test.bin"
+run_test "boot2.asm syntax check" "nasm -f bin -I $INCDIR $SRCDIR/boot2.asm -o /tmp/boot2_test.bin"
 
 # Test 4: Verify print.asm can be assembled (included in boot2)
-run_test "print.asm inclusion check" "grep -q '%include \"print.asm\"' boot2.asm"
+run_test "print.asm inclusion check" "grep -q '%include \"print.asm\"' $SRCDIR/boot2.asm"
 
 # Test 5: Clean build succeeds
-run_test "Clean build succeeds" "make clean && make"
+run_test "Clean build succeeds" "make -C $TEST_DIR clean && make -C $TEST_DIR"
 
 # Test 6: Verify boot.bin exists and is 512 bytes
-run_test "boot.bin size (512 bytes)" "[ -f bin/boot.bin ] && [ $(stat -f%z bin/boot.bin) -eq 512 ]"
+run_test "boot.bin size (512 bytes)" "[ -f $TEST_DIR/build/obj/boot.bin ] && [ $(stat -f%z $TEST_DIR/build/obj/boot.bin) -eq 512 ]"
 
 # Test 7: Verify boot2.bin exists and is under 1024 bytes
-run_test "boot2.bin size (< 1024 bytes)" "[ -f bin/boot2.bin ] && [ $(stat -f%z bin/boot2.bin) -lt 1024 ]"
+run_test "boot2.bin size (< 1024 bytes)" "[ -f $TEST_DIR/build/obj/boot2.bin ] && [ $(stat -f%z $TEST_DIR/build/obj/boot2.bin) -lt 1024 ]"
 
 # Test 8: Verify floppy.img is 1.44 MB
-run_test "floppy.img size (1.44 MB)" "[ -f floppy.img ] && [ $(stat -f%z floppy.img) -eq 1474560 ]"
+run_test "floppy.img size (1.44 MB)" "[ -f $TEST_DIR/floppy.img ] && [ $(stat -f%z $TEST_DIR/floppy.img) -eq 1474560 ]"
 
 # Test 9: Verify boot signature in boot.bin
-run_test "boot.bin has valid signature" "tail -c 2 bin/boot.bin | xxd -p | grep -q '55aa'"
+run_test "boot.bin has valid signature" "tail -c 2 $TEST_DIR/build/obj/boot.bin | xxd -p | grep -q '55aa'"
 
 # Test 10: Check for debug messages in boot.asm
-run_test "Debug messages in boot.asm" "grep -q 'msg_boot_start' boot.asm"
+run_test "Debug messages in boot.asm" "grep -q 'msg_boot_start' $SRCDIR/boot.asm"
 
 # Test 11: Check for debug messages in boot2.asm
-run_test "Debug messages in boot2.asm" "grep -q 'msg_boot2_start' boot2.asm"
+run_test "Debug messages in boot2.asm" "grep -q 'msg_boot2_start' $SRCDIR/boot2.asm"
 
 # Test 12: Check interrupt macro is defined
-run_test "Interrupt setup macro defined" "grep -q 'setup_interrupt' boot2.asm"
+run_test "Interrupt setup macro defined" "grep -q 'setup_interrupt' $SRCDIR/boot2.asm"
 
 # Test 13: Check constants are defined
-run_test "Constants defined in boot.asm" "grep -q 'BOOT2_ADDR' boot.asm"
+run_test "Constants defined in boot.asm" "grep -q 'BOOT2_ADDR' $SRCDIR/boot.asm"
 
 # Print summary
 echo ""

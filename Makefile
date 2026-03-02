@@ -1,8 +1,10 @@
 AS=nasm
-ASFLAGS=-f bin
+ASFLAGS=-f bin -I include/
 BOOT_IMAGE=floppy.img
-BINDIR=bin
-OBJS=$(addprefix $(BINDIR)/, boot.bin boot2.bin)
+BINDIR=build
+SRCDIR=src
+OBJDIR=$(BINDIR)/obj
+OBJS=$(addprefix $(OBJDIR)/, boot.bin boot2.bin)
 
 # VirtualBox VM name
 VM_NAME=boot-loader
@@ -14,18 +16,18 @@ all: $(BOOT_IMAGE)
 # Create properly sized floppy image (1.44 MB)
 $(BOOT_IMAGE): $(OBJS)
 	dd if=/dev/zero of=$(BOOT_IMAGE) bs=512 count=2880
-	dd if=$(BINDIR)/boot.bin of=$(BOOT_IMAGE) bs=512 conv=notrunc
-	dd if=$(BINDIR)/boot2.bin of=$(BOOT_IMAGE) bs=512 seek=1 conv=notrunc
+	dd if=$(OBJDIR)/boot.bin of=$(BOOT_IMAGE) bs=512 conv=notrunc
+	dd if=$(OBJDIR)/boot2.bin of=$(BOOT_IMAGE) bs=512 seek=1 conv=notrunc
 
 # boot2.bin depends on print.asm due to %include directive
-$(BINDIR)/boot2.bin: boot2.asm print.asm | $(BINDIR)
+$(OBJDIR)/boot2.bin: $(SRCDIR)/boot2.asm include/print.asm | $(OBJDIR)
+	$(AS) $(ASFLAGS) -o $@ $(SRCDIR)/boot2.asm
+
+$(OBJDIR)/%.bin: $(SRCDIR)/%.asm | $(OBJDIR)
 	$(AS) $(ASFLAGS) -o $@ $<
 
-$(BINDIR)/%.bin: %.asm | $(BINDIR)
-	$(AS) $(ASFLAGS) -o $@ $<
-
-$(BINDIR):
-	mkdir -p $(BINDIR)
+$(OBJDIR):
+	mkdir -p $(OBJDIR)
 
 # Create initial floppy image (1.44 MB)
 floppy-image: $(BOOT_IMAGE)
