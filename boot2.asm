@@ -63,7 +63,7 @@ mainloop:
 	;call	halt
 halt:
 	mov	si, halted
-	call	print
+	;call	print
 	hlt
 	jmp	halt		; loop back to "halt", needed if an exception returns with IRET
 				; points to hlt + 1
@@ -214,8 +214,8 @@ timer:
 	div	word [divisor]
 	cmp	dx, 0
 	jne	.end
-	push	sched
-	call	println
+;	push	sched
+;	call	println
 	pop	cx
 .end:
 	mov	[ticks], bx
