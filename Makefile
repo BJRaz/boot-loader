@@ -7,7 +7,7 @@ OBJS=$(addprefix $(BINDIR)/, boot.bin boot2.bin)
 # VirtualBox VM name
 VM_NAME=boot-loader
 
-.PHONY: all clean run run-vbox
+.PHONY: all clean run run-vbox test test-asm test-binary test-quality
 
 all: $(BOOT_IMAGE)
 
@@ -44,5 +44,20 @@ run-vbox: $(BOOT_IMAGE)
 
 clean:
 	rm -rf $(BOOT_IMAGE) $(BINDIR)
+
+# Run all tests
+test: all
+	bash tests/run_all_tests.sh
+
+# Run specific test suites
+test-asm:
+	bash tests/test_assembler.sh
+
+test-binary:
+	bash tests/test_binary_structure.sh
+
+test-quality:
+	bash tests/test_code_quality.sh
+
 
 
