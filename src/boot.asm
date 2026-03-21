@@ -76,7 +76,7 @@ start:
 
 	jmp	BOOT2_ADDR		; jump to boot2 stage
 
-	hlt
+	jmp	halt_loop
 
 ; DISK OPERATIONS:
 ; read from floppy
@@ -121,7 +121,7 @@ diskops:
 	; Debug: Print disk read error
 	mov	si, msg_disk_error
 	call	print
-	hlt	
+	jmp	halt_loop
 
 .diskreadok:
 	; Debug: Print disk read success
@@ -136,6 +136,12 @@ diskops:
 	call	println
 	pop	cx
 	ret
+
+halt_loop:
+	cli
+.hang:
+	hlt
+	jmp	.hang
 
 %include "print.asm"
 
