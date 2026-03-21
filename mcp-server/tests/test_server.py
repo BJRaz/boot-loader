@@ -88,10 +88,10 @@ async def mcp_session():
     Default test session: auto backend mode, isolated VM name/port.
     """
     async for s in _session_with_env({
-        "VBOX_VM_NAME": "test-vm",
-        "VBOX_GDB_PORT": "15037",
-        "VBOX_START_GUI": "false",
-        "VBOX_DEBUG_BACKEND": "auto",
+        "VBOX_VM_NAME": os.environ.get("VBOX_VM_NAME", "test-vm"),
+        "VBOX_GDB_PORT": os.environ.get("VBOX_GDB_PORT", "15037"),
+        "VBOX_START_GUI": os.environ.get("VBOX_START_GUI", "false"),
+        "VBOX_DEBUG_BACKEND": os.environ.get("VBOX_DEBUG_BACKEND", "auto"),
     }):
         yield s
 
@@ -100,9 +100,9 @@ async def mcp_session():
 async def strict_native_session():
     """Strict native backend session (`VBOX_DEBUG_BACKEND=native`)."""
     async for s in _session_with_env({
-        "VBOX_VM_NAME": "test-vm",
-        "VBOX_GDB_PORT": "15037",
-        "VBOX_START_GUI": "false",
+        "VBOX_VM_NAME": os.environ.get("VBOX_VM_NAME", "test-vm"),
+        "VBOX_GDB_PORT": os.environ.get("VBOX_GDB_PORT", "15037"),
+        "VBOX_START_GUI": os.environ.get("VBOX_START_GUI", "false"),
         "VBOX_DEBUG_BACKEND": "native",
     }):
         yield s
@@ -112,9 +112,9 @@ async def strict_native_session():
 async def strict_gdb_session():
     """Strict gdb backend session (`VBOX_DEBUG_BACKEND=gdb`)."""
     async for s in _session_with_env({
-        "VBOX_VM_NAME": "test-vm",
-        "VBOX_GDB_PORT": "15037",
-        "VBOX_START_GUI": "false",
+        "VBOX_VM_NAME": os.environ.get("VBOX_VM_NAME", "test-vm"),
+        "VBOX_GDB_PORT": os.environ.get("VBOX_GDB_PORT", "15037"),
+        "VBOX_START_GUI": os.environ.get("VBOX_START_GUI", "false"),
         "VBOX_DEBUG_BACKEND": "gdb",
     }):
         yield s

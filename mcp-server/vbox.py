@@ -357,7 +357,9 @@ def debugvm_getregisters(
 
 
 def native_read_registers(vm_name: str = config.VM_NAME, cpu: int = 0) -> dict:
-    r = debugvm_getregisters(vm_name=vm_name, cpu=cpu)
+    # Request all important 16-bit registers for real-mode debugging
+    reg_names = ["cs", "ip", "sp", "ax", "bx", "cx", "dx", "si", "di", "bp", "flags"]
+    r = debugvm_getregisters(vm_name=vm_name, cpu=cpu, reg_names=reg_names)
     if not r.get("ok"):
         return r
 
@@ -380,6 +382,15 @@ def native_read_registers(vm_name: str = config.VM_NAME, cpu: int = 0) -> dict:
         "registers": registers,
         "cs": cs_raw,
         "ip": ip_raw,
+        "sp": registers.get("sp"),
+        "ax": registers.get("ax"),
+        "bx": registers.get("bx"),
+        "cx": registers.get("cx"),
+        "dx": registers.get("dx"),
+        "si": registers.get("si"),
+        "di": registers.get("di"),
+        "bp": registers.get("bp"),
+        "flags": registers.get("flags"),
         "flat_ip": f"0x{flat_ip:05X}" if flat_ip is not None else None,
         "raw": r.get("raw"),
     }
