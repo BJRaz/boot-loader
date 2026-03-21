@@ -1,0 +1,7 @@
+# MCP server dependencies
+
+# MCP SDK (stdio transport, tool/server primitives)
+mcp>=1.0.0
+
+# GDB/MI client — communicate with VirtualBox's built-in GDB stub
+pygdbmi>=0.11.0

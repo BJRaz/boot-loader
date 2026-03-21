@@ -23,8 +23,14 @@
 - VirtualBox path: `make run-vbox` attaches `floppy.img` to VM `boot-loader`, enables GDB at `localhost:5037`, starts GUI VM.
 - Expect BIOS-level debugging patterns: debug strings in assembly (`[BOOT]`, `[BOOT2]`) instead of high-level logging.
 
+## MCP server tooling
+- For MCP server implementation in this repo, use Python tooling explicitly with `python3` and `pip3` commands.
+- Prefer `python3 -m pip ...` when installing/upgrading Python packages for MCP server work.
+- Use Python-based scripts/tools for VirtualBox MCP workflows unless the task explicitly requires a different runtime.
+
 ## Current repo caveats to respect
-- `make test` currently points to `tests/run_all_tests.sh`, but `tests/` is missing in the current tree; do not assume tests are runnable.
+- `tests/` is currently missing in the repo; do not assume automated test scripts are available.
+- `Makefile` no longer exposes `test` targets; use `make clean && make` as the primary verification workflow.
 - `build_boot.sh` is legacy and references old root-level paths (`boot.asm`); prefer `Makefile` commands.
 
 ## Assembly conventions used here
