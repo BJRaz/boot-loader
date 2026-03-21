@@ -28,15 +28,17 @@ start:
 	;int	0x03		; debug
 	cli			; clear interrupt flag
 	cld			; clear DF flag for auto-increment SI in string operations
-	xor	ax, ax		; clear AX (faster than mov ax, 0)
+
+	xor	ax, ax		; clear AX to set segment registers to 0
 	mov	ds, ax		; clear segment registers
-	mov	ss, ax		; set stack segment
+	mov	ss, ax		
 	mov	es, ax
 	mov	fs, ax
 	mov	gs, ax
 
-	mov	sp, STACK_TOP	; setup stack
-	mov	bp, sp
+	mov	sp, STACK_TOP	; setup stack, stack grows downward, 
+						; TODO: theres no fixed size, just need to ensure it doesn't overlap with code or data	
+	mov	bp, sp			; set base pointer for stack frame (optional, but good practice)		
 
 	; Debug: Print bootloader initialized message
 	mov	si, msg_boot_start

@@ -21,12 +21,12 @@ print:
 ; Stack: [SP+0] = return address, [SP+2] = string pointer
 
 println:
-	push	bp
-	mov	bp, sp
+	push	bp			; preserve base pointer
+	mov	bp, sp			; set base pointer to current stack frame
 	push	si			; preserve SI
 	mov	si, [bp+4]		; get string pointer from stack
 	call	print
-	pop	si			; restore SI
-	mov	sp, bp
-	pop	bp
+	pop	si				; restore SI
+	mov	sp, bp			; restore stack pointer
+	pop	bp				; return to caller
 	ret
