@@ -6,6 +6,7 @@ reusable across different projects without editing this file.
 """
 
 import os
+import shutil
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -56,6 +57,49 @@ GDB_PORT: int = int(os.environ.get("VBOX_GDB_PORT", "5037"))
 # GDB debug provider / IO provider passed to VBoxManage modifyvm.
 GDB_PROVIDER: str = "gdb"
 GDB_IO_PROVIDER: str = "tcp"
+
+# Debug backend selection:
+#   auto   -> use gdb if binary exists, else native
+#   gdb    -> strict: require gdb binary
+#   native -> strict: use VirtualBox native debug operations
+DEBUG_BACKEND: str = os.environ.get("VBOX_DEBUG_BACKEND", "auto").strip().lower()
+
+
+def detect_gdb_binary() -> str | None:
+    """Return resolved gdb binary path if available, else None."""
+    return shutil.which("gdb")
+
+
+def select_debug_backend() -> tuple[str, str | None]:
+    """
+    Resolve backend with strict semantics.
+
+    Returns
+    -------
+    tuple[str, str|None]
+        (backend, gdb_binary)
+    """
+    if DEBUG_BACKEND not in ("auto", "gdb", "native"):
+        raise ValueError(
+            "Invalid VBOX_DEBUG_BACKEND. Expected one of: auto, gdb, native. "
+            f"Got: {DEBUG_BACKEND!r}"
+        )
+
+    gdb_bin = detect_gdb_binary()
+
+    if DEBUG_BACKEND == "native":
+        return "native", None
+
+    if DEBUG_BACKEND == "gdb":
+        if not gdb_bin:
+            raise RuntimeError(
+                "Strict mode enabled (VBOX_DEBUG_BACKEND=gdb), but 'gdb' binary was not found on PATH."
+            )
+        return "gdb", gdb_bin
+
+    if gdb_bin:
+        return "gdb", gdb_bin
+    return "native", None
 
 # ---------------------------------------------------------------------------
 # Real-mode memory map constants (used by gdb_client helpers)

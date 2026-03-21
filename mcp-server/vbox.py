@@ -39,6 +39,19 @@ def _err(msg: str) -> dict:
     return {"ok": False, "error": msg.strip()}
 
 
+def _unsupported_native(operation: str) -> dict:
+    return {
+        "ok": False,
+        "backend": "native",
+        "error": "unsupported_by_backend",
+        "operation": operation,
+        "message": (
+            f"Operation '{operation}' is not supported by VirtualBox native debugger backend. "
+            "Use VBOX_DEBUG_BACKEND=gdb for full breakpoint/memory/disassembly support."
+        ),
+    }
+
+
 # ---------------------------------------------------------------------------
 # VM state
 # ---------------------------------------------------------------------------
@@ -115,27 +128,65 @@ def detach_floppy(
 # GDB stub configuration
 # ---------------------------------------------------------------------------
 
+def configure_debug_provider(
+    vm_name: str = config.VM_NAME,
+    provider: str = config.GDB_PROVIDER,
+    host: str = config.GDB_HOST,
+    port: int = config.GDB_PORT,
+    io_provider: str = config.GDB_IO_PROVIDER,
+) -> dict:
+    """
+    Configure VirtualBox's built-in guest debug provider on *vm_name*.
+
+    The VM **must be powered off** for modifyvm to succeed.
+    For provider='gdb', connect with: target remote <host>:<port>
+    """
+    provider = provider.strip().lower()
+    if provider not in ("gdb", "native", "none", "kd"):
+        return _err(f"Unsupported debug provider: {provider}")
+
+    if provider == "gdb":
+        result = _run(
+            "modifyvm", vm_name,
+            "--guest-debug-provider", "gdb",
+            "--guest-debug-io-provider", io_provider,
+            "--guest-debug-address", host,
+            "--guest-debug-port", str(port),
+        )
+    else:
+        result = _run(
+            "modifyvm", vm_name,
+            "--guest-debug-provider", provider,
+        )
+
+    if result.returncode != 0:
+        return _err(result.stderr or result.stdout)
+
+    if provider == "gdb":
+        return _ok(f"Debug provider configured: gdb at {host}:{port}")
+    return _ok(f"Debug provider configured: {provider}")
+
+
 def configure_gdb_stub(
     vm_name: str = config.VM_NAME,
     host: str = config.GDB_HOST,
     port: int = config.GDB_PORT,
 ) -> dict:
-    """
-    Configure VirtualBox's built-in GDB stub on *vm_name*.
-
-    The VM **must be powered off** for modifyvm to succeed.
-    After this call connect GDB with:  target remote <host>:<port>
-    """
-    result = _run(
-        "modifyvm", vm_name,
-        "--guest-debug-provider", config.GDB_PROVIDER,
-        "--guest-debug-io-provider", config.GDB_IO_PROVIDER,
-        "--guest-debug-address", host,
-        "--guest-debug-port", str(port),
+    """Backwards-compatible wrapper for GDB provider setup."""
+    return configure_debug_provider(
+        vm_name=vm_name,
+        provider="gdb",
+        host=host,
+        port=port,
+        io_provider=config.GDB_IO_PROVIDER,
     )
-    if result.returncode != 0:
-        return _err(result.stderr or result.stdout)
-    return _ok(f"GDB stub configured: {host}:{port}")
+
+
+def configure_native_debug(
+    vm_name: str = config.VM_NAME,
+) -> dict:
+    """Configure VirtualBox native debug provider."""
+    return configure_debug_provider(vm_name=vm_name, provider="native")
 
 
 def disable_gdb_stub(vm_name: str = config.VM_NAME) -> dict:
@@ -214,6 +265,7 @@ def prepare_debug_session(
     vm_name: str = config.VM_NAME,
     gdb_host: str = config.GDB_HOST,
     gdb_port: int = config.GDB_PORT,
+    debug_provider: str = config.GDB_PROVIDER,
     gui: bool = config.START_GUI,
 ) -> dict:
     """
@@ -246,9 +298,14 @@ def prepare_debug_session(
     if not r["ok"]:
         return {"ok": False, "error": r["error"], "steps": steps}
 
-    # --- 3. Configure GDB stub ---
-    r = configure_gdb_stub(vm_name, gdb_host, gdb_port)
-    steps.append({"action": "configure_gdb_stub", **r})
+    # --- 3. Configure debug provider ---
+    r = configure_debug_provider(
+        vm_name=vm_name,
+        provider=debug_provider,
+        host=gdb_host,
+        port=gdb_port,
+    )
+    steps.append({"action": "configure_debug_provider", "provider": debug_provider, **r})
     if not r["ok"]:
         return {"ok": False, "error": r["error"], "steps": steps}
 
@@ -260,6 +317,142 @@ def prepare_debug_session(
 
     return {
         "ok": True,
-        "output": f"Debug session started. Connect GDB: target remote {gdb_host}:{gdb_port}",
+        "output": (
+            f"Debug session started with provider '{debug_provider}'. "
+            + (f"Connect GDB: target remote {gdb_host}:{gdb_port}" if debug_provider == "gdb" else "")
+        ).strip(),
         "steps": steps,
     }
+
+
+# ---------------------------------------------------------------------------
+# Native debugger operations (VBoxManage debugvm)
+# ---------------------------------------------------------------------------
+
+def debugvm_getregisters(
+    vm_name: str = config.VM_NAME,
+    cpu: int = 0,
+    reg_names: list[str] | None = None,
+) -> dict:
+    args = ["debugvm", vm_name, "getregisters", "--cpu", str(cpu)]
+    if reg_names:
+        args.extend(reg_names)
+    result = _run(*args)
+    if result.returncode != 0:
+        return _err(result.stderr or result.stdout)
+
+    parsed: dict[str, str] = {}
+    for line in result.stdout.splitlines():
+        match = re.match(r"\s*([A-Za-z0-9_.]+)\s*=\s*([^\s]+)", line)
+        if match:
+            parsed[match.group(1).lower()] = match.group(2)
+
+    return {
+        "ok": True,
+        "backend": "native",
+        "cpu": cpu,
+        "registers": parsed,
+        "raw": result.stdout.strip(),
+    }
+
+
+def native_read_registers(vm_name: str = config.VM_NAME, cpu: int = 0) -> dict:
+    r = debugvm_getregisters(vm_name=vm_name, cpu=cpu)
+    if not r.get("ok"):
+        return r
+
+    registers = r.get("registers", {})
+    cs_raw = registers.get("cs")
+    ip_raw = registers.get("ip") or registers.get("eip") or registers.get("rip")
+
+    flat_ip = None
+    try:
+        if cs_raw is not None and ip_raw is not None:
+            cs_val = int(cs_raw, 0)
+            ip_val = int(ip_raw, 0)
+            flat_ip = (cs_val << 4) + (ip_val & 0xFFFF)
+    except ValueError:
+        flat_ip = None
+
+    return {
+        "ok": True,
+        "backend": "native",
+        "registers": registers,
+        "cs": cs_raw,
+        "ip": ip_raw,
+        "flat_ip": f"0x{flat_ip:05X}" if flat_ip is not None else None,
+        "raw": r.get("raw"),
+    }
+
+
+def native_connect() -> dict:
+    return {
+        "ok": True,
+        "backend": "native",
+        "output": "Native debugger backend does not require an explicit connect step.",
+    }
+
+
+def native_disconnect() -> dict:
+    return {
+        "ok": True,
+        "backend": "native",
+        "output": "Native debugger backend does not require an explicit disconnect step.",
+    }
+
+
+def native_continue_execution(vm_name: str = config.VM_NAME) -> dict:
+    r = resume_vm(vm_name)
+    return {"backend": "native", **r}
+
+
+def native_interrupt_execution(vm_name: str = config.VM_NAME) -> dict:
+    r = pause_vm(vm_name)
+    return {"backend": "native", **r}
+
+
+def native_step_instruction() -> dict:
+    return _unsupported_native("step_instruction")
+
+
+def native_next_instruction() -> dict:
+    return _unsupported_native("next_instruction")
+
+
+def native_set_breakpoint() -> dict:
+    return _unsupported_native("set_breakpoint")
+
+
+def native_set_breakpoint_segoff() -> dict:
+    return _unsupported_native("set_breakpoint_segoff")
+
+
+def native_delete_breakpoint() -> dict:
+    return _unsupported_native("delete_breakpoint")
+
+
+def native_list_breakpoints() -> dict:
+    return {
+        "ok": False,
+        "backend": "native",
+        "error": "unsupported_by_backend",
+        "operation": "list_breakpoints",
+        "breakpoints": [],
+        "message": "Native backend does not provide breakpoint enumeration via this MCP interface.",
+    }
+
+
+def native_read_memory() -> dict:
+    return _unsupported_native("read_memory")
+
+
+def native_read_memory_segoff() -> dict:
+    return _unsupported_native("read_memory_segoff")
+
+
+def native_write_memory() -> dict:
+    return _unsupported_native("write_memory")
+
+
+def native_disassemble() -> dict:
+    return _unsupported_native("disassemble")

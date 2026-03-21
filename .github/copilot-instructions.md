@@ -28,6 +28,11 @@
 - Prefer `python3 -m pip ...` when installing/upgrading Python packages for MCP server work.
 - Use Python-based scripts/tools for VirtualBox MCP workflows unless the task explicitly requires a different runtime.
 
+## MCP client interaction
+- The MCP server is designed to be launched by an MCP client (e.g., Claude Desktop, VS Code Copilot) and communicates over stdio.
+- Do not run the MCP server directly from the command line; it is intended to be managed by an MCP client that handles its lifecycle and communication.
+- Read the README.md in `mcp-server/` for details on how the server works and how to set up the environment for it.
+
 ## Current repo caveats to respect
 - `tests/` is currently missing in the repo; do not assume automated test scripts are available.
 - `Makefile` no longer exposes `test` targets; use `make clean && make` as the primary verification workflow.

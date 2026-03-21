@@ -60,7 +60,7 @@ Addressing helpers (returned values)
 import json
 import subprocess
 import sys
-from typing import Any
+from typing import Any, Optional
 
 import mcp.server.stdio
 import mcp.types as types
@@ -76,8 +76,48 @@ from gdb_client import GdbClient, seg_off_to_flat, flat_to_seg_off
 
 app = Server("vbox-boot-debug")
 
-# One shared GDB client per server process (stdio = single session).
-_gdb = GdbClient(host=config.GDB_HOST, port=config.GDB_PORT)
+# Backend selection (strict semantics implemented in config.select_debug_backend).
+_backend_init_error: Optional[str] = None
+try:
+    _debug_backend, _gdb_binary = config.select_debug_backend()
+except Exception as exc:
+    _debug_backend, _gdb_binary = "unavailable", None
+    _backend_init_error = str(exc)
+
+# One shared GDB client per server process when gdb backend is active.
+_gdb: Optional[GdbClient] = None
+if _debug_backend == "gdb":
+    _gdb = GdbClient(host=config.GDB_HOST, port=config.GDB_PORT)
+
+
+def _backend_error_result(operation: str) -> dict:
+    if _backend_init_error:
+        return {
+            "ok": False,
+            "backend": _debug_backend,
+            "error": "debug_backend_unavailable",
+            "operation": operation,
+            "message": _backend_init_error,
+        }
+    return {
+        "ok": False,
+        "backend": _debug_backend,
+        "error": "debug_backend_unavailable",
+        "operation": operation,
+        "message": f"No debugger backend available for operation '{operation}'.",
+    }
+
+
+def _ensure_debug_backend(operation: str) -> Optional[dict]:
+    if _debug_backend == "unavailable":
+        return _backend_error_result(operation)
+    return None
+
+
+def _add_backend(result: Any) -> Any:
+    if isinstance(result, dict) and "backend" not in result:
+        result["backend"] = _debug_backend
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -188,10 +228,9 @@ async def list_tools() -> list[types.Tool]:
         # -- GDB connection --
         _tool(
             "connect_gdb",
-            f"Spawn a local GDB process and connect it to the VirtualBox stub at "
-            f"{config.GDB_HOST}:{config.GDB_PORT}. "
-            "Automatically sets architecture to i8086 for real-mode debugging. "
-            "Waits up to `timeout` seconds for the stub to become reachable.",
+            "Connect to the selected debug backend. "
+            "If backend is 'gdb', spawns a local GDB process and connects it to the VirtualBox stub. "
+            "If backend is 'native', no explicit connect is required and this returns ok=true.",
             {
                 "timeout": {
                     "type": "number",
@@ -201,6 +240,16 @@ async def list_tools() -> list[types.Tool]:
             },
         ),
         _tool("disconnect_gdb", "Disconnect GDB and terminate the local GDB process.", {}),
+        _tool(
+            "get_debug_backend",
+            "Return selected debug backend and strict-mode selection info.",
+            {},
+        ),
+        _tool(
+            "get_debug_capabilities",
+            "Return backend capability flags for breakpoint/memory/step/disassemble operations.",
+            {},
+        ),
 
         # -- Breakpoints --
         _tool(
@@ -331,6 +380,7 @@ def _parse_addr(value: Any) -> int:
 @app.call_tool()
 async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
     result: Any = None
+    arguments = arguments or {}
 
     # -- Build --
     if name == "build_image":
@@ -353,13 +403,20 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
         result = vbox.get_vm_state(arguments.get("vm_name", config.VM_NAME))
 
     elif name == "prepare_debug_session":
+        backend_err = _ensure_debug_backend("prepare_debug_session")
+        if backend_err:
+            result = backend_err
+            return [types.TextContent(type="text", text=json.dumps(result, indent=2))]
+
         result = vbox.prepare_debug_session(
             image_path=arguments.get("image_path", config.FLOPPY_IMAGE),
             vm_name=arguments.get("vm_name", config.VM_NAME),
             gdb_host=arguments.get("gdb_host", config.GDB_HOST),
             gdb_port=int(arguments.get("gdb_port", config.GDB_PORT)),
+            debug_provider="native" if _debug_backend == "native" else "gdb",
             gui=bool(arguments.get("gui", config.START_GUI)),
         )
+        result = _add_backend(result)
 
     elif name == "attach_floppy":
         result = vbox.attach_floppy(
@@ -394,68 +451,207 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
 
     # -- GDB connection --
     elif name == "connect_gdb":
-        result = _gdb.connect(timeout=float(arguments.get("timeout", 15)))
+        backend_err = _ensure_debug_backend("connect_gdb")
+        if backend_err:
+            result = backend_err
+        elif _debug_backend == "native":
+            result = vbox.native_connect()
+        else:
+            result = _gdb.connect(timeout=float(arguments.get("timeout", 15)))
+        result = _add_backend(result)
 
     elif name == "disconnect_gdb":
-        result = _gdb.disconnect()
+        backend_err = _ensure_debug_backend("disconnect_gdb")
+        if backend_err:
+            result = backend_err
+        elif _debug_backend == "native":
+            result = vbox.native_disconnect()
+        else:
+            result = _gdb.disconnect()
+        result = _add_backend(result)
+
+    elif name == "get_debug_backend":
+        result = {
+            "ok": _debug_backend != "unavailable",
+            "backend": _debug_backend,
+            "configured": config.DEBUG_BACKEND,
+            "strict_mode": config.DEBUG_BACKEND in ("gdb", "native"),
+            "gdb_binary": _gdb_binary,
+            "error": _backend_init_error,
+        }
+
+    elif name == "get_debug_capabilities":
+        capabilities = {
+            "connect": True,
+            "disconnect": True,
+            "read_registers": True,
+            "continue_execution": True,
+            "interrupt_execution": True,
+            "set_breakpoint": _debug_backend == "gdb",
+            "delete_breakpoint": _debug_backend == "gdb",
+            "list_breakpoints": _debug_backend == "gdb",
+            "step_instruction": _debug_backend == "gdb",
+            "next_instruction": _debug_backend == "gdb",
+            "read_memory": _debug_backend == "gdb",
+            "read_memory_segoff": _debug_backend == "gdb",
+            "write_memory": _debug_backend == "gdb",
+            "disassemble": _debug_backend == "gdb",
+        }
+        result = {
+            "ok": _debug_backend != "unavailable",
+            "backend": _debug_backend,
+            "capabilities": capabilities,
+            "error": _backend_init_error,
+        }
 
     # -- Breakpoints --
     elif name == "set_breakpoint":
-        result = _gdb.set_breakpoint(_parse_addr(arguments["flat_addr"]))
+        backend_err = _ensure_debug_backend("set_breakpoint")
+        if backend_err:
+            result = backend_err
+        elif _debug_backend == "native":
+            result = vbox.native_set_breakpoint()
+        else:
+            result = _gdb.set_breakpoint(_parse_addr(arguments["flat_addr"]))
+        result = _add_backend(result)
 
     elif name == "set_breakpoint_segoff":
-        result = _gdb.set_breakpoint_segoff(
-            int(arguments["segment"]),
-            int(arguments["offset"]),
-        )
+        backend_err = _ensure_debug_backend("set_breakpoint_segoff")
+        if backend_err:
+            result = backend_err
+        elif _debug_backend == "native":
+            result = vbox.native_set_breakpoint_segoff()
+        else:
+            result = _gdb.set_breakpoint_segoff(
+                int(arguments["segment"]),
+                int(arguments["offset"]),
+            )
+        result = _add_backend(result)
 
     elif name == "delete_breakpoint":
-        result = _gdb.delete_breakpoint(_parse_addr(arguments["flat_addr"]))
+        backend_err = _ensure_debug_backend("delete_breakpoint")
+        if backend_err:
+            result = backend_err
+        elif _debug_backend == "native":
+            result = vbox.native_delete_breakpoint()
+        else:
+            result = _gdb.delete_breakpoint(_parse_addr(arguments["flat_addr"]))
+        result = _add_backend(result)
 
     elif name == "list_breakpoints":
-        result = _gdb.list_breakpoints()
+        backend_err = _ensure_debug_backend("list_breakpoints")
+        if backend_err:
+            result = backend_err
+        elif _debug_backend == "native":
+            result = vbox.native_list_breakpoints()
+        else:
+            result = _gdb.list_breakpoints()
+        result = _add_backend(result)
 
     # -- Execution control --
     elif name == "continue_execution":
-        result = _gdb.continue_execution()
+        backend_err = _ensure_debug_backend("continue_execution")
+        if backend_err:
+            result = backend_err
+        elif _debug_backend == "native":
+            result = vbox.native_continue_execution(arguments.get("vm_name", config.VM_NAME))
+        else:
+            result = _gdb.continue_execution()
+        result = _add_backend(result)
 
     elif name == "step_instruction":
-        result = _gdb.step_instruction()
+        backend_err = _ensure_debug_backend("step_instruction")
+        if backend_err:
+            result = backend_err
+        elif _debug_backend == "native":
+            result = vbox.native_step_instruction()
+        else:
+            result = _gdb.step_instruction()
+        result = _add_backend(result)
 
     elif name == "next_instruction":
-        result = _gdb.next_instruction()
+        backend_err = _ensure_debug_backend("next_instruction")
+        if backend_err:
+            result = backend_err
+        elif _debug_backend == "native":
+            result = vbox.native_next_instruction()
+        else:
+            result = _gdb.next_instruction()
+        result = _add_backend(result)
 
     elif name == "interrupt_execution":
-        result = _gdb.interrupt_execution()
+        backend_err = _ensure_debug_backend("interrupt_execution")
+        if backend_err:
+            result = backend_err
+        elif _debug_backend == "native":
+            result = vbox.native_interrupt_execution(arguments.get("vm_name", config.VM_NAME))
+        else:
+            result = _gdb.interrupt_execution()
+        result = _add_backend(result)
 
     # -- Registers / memory --
     elif name == "read_registers":
-        result = _gdb.read_registers()
+        backend_err = _ensure_debug_backend("read_registers")
+        if backend_err:
+            result = backend_err
+        elif _debug_backend == "native":
+            result = vbox.native_read_registers(arguments.get("vm_name", config.VM_NAME), int(arguments.get("cpu", 0)))
+        else:
+            result = _gdb.read_registers()
+        result = _add_backend(result)
 
     elif name == "read_memory":
-        result = _gdb.read_memory(
-            _parse_addr(arguments["flat_addr"]),
-            int(arguments.get("length", 16)),
-        )
+        backend_err = _ensure_debug_backend("read_memory")
+        if backend_err:
+            result = backend_err
+        elif _debug_backend == "native":
+            result = vbox.native_read_memory()
+        else:
+            result = _gdb.read_memory(
+                _parse_addr(arguments["flat_addr"]),
+                int(arguments.get("length", 16)),
+            )
+        result = _add_backend(result)
 
     elif name == "read_memory_segoff":
-        result = _gdb.read_memory_segoff(
-            int(arguments["segment"]),
-            int(arguments["offset"]),
-            int(arguments.get("length", 16)),
-        )
+        backend_err = _ensure_debug_backend("read_memory_segoff")
+        if backend_err:
+            result = backend_err
+        elif _debug_backend == "native":
+            result = vbox.native_read_memory_segoff()
+        else:
+            result = _gdb.read_memory_segoff(
+                int(arguments["segment"]),
+                int(arguments["offset"]),
+                int(arguments.get("length", 16)),
+            )
+        result = _add_backend(result)
 
     elif name == "write_memory":
-        result = _gdb.write_memory(
-            _parse_addr(arguments["flat_addr"]),
-            [int(b) for b in arguments["data"]],
-        )
+        backend_err = _ensure_debug_backend("write_memory")
+        if backend_err:
+            result = backend_err
+        elif _debug_backend == "native":
+            result = vbox.native_write_memory()
+        else:
+            result = _gdb.write_memory(
+                _parse_addr(arguments["flat_addr"]),
+                [int(b) for b in arguments["data"]],
+            )
+        result = _add_backend(result)
 
     elif name == "disassemble":
-        result = _gdb.disassemble(
-            _parse_addr(arguments["flat_addr"]),
-            int(arguments.get("count", 10)),
-        )
+        backend_err = _ensure_debug_backend("disassemble")
+        if backend_err:
+            result = backend_err
+        elif _debug_backend == "native":
+            result = vbox.native_disassemble()
+        else:
+            result = _gdb.disassemble(
+                _parse_addr(arguments["flat_addr"]),
+                int(arguments.get("count", 10)),
+            )
+        result = _add_backend(result)
 
     # -- Addressing helpers --
     elif name == "seg_off_to_flat":

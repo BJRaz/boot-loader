@@ -30,7 +30,7 @@ mcp-server/
 |---|---|
 | Python 3.11+ | `python3 --version` |
 | VirtualBox 7.0 | `VBoxManage --version` must be on `$PATH` |
-| GDB with i8086 support | `brew install gdb` or system GDB |
+| GDB with i8086 support (optional) | Required only when using `VBOX_DEBUG_BACKEND=gdb` |
 | A VirtualBox VM named `boot-loader` | Already configured in this project |
 
 ---
@@ -116,6 +116,7 @@ the MCP client config (see above) or exporting them in the shell.
 | `VBOX_STORAGE_PORT` | `0` | Floppy controller port |
 | `VBOX_STORAGE_DEVICE` | `0` | Floppy controller device |
 | `VBOX_START_GUI` | `true` | `true` = GUI window, `false` = headless |
+| `VBOX_DEBUG_BACKEND` | `auto` | `auto` = use GDB if found else native, `gdb` = strict require GDB, `native` = strict native debugvm |
 | `VBOX_GDB_HOST` | `localhost` | GDB stub bind address |
 | `VBOX_GDB_PORT` | `5037` | GDB stub TCP port |
 
@@ -134,7 +135,7 @@ the MCP client config (see above) or exporting them in the shell.
 | Tool | Description |
 |---|---|
 | `get_vm_state` | Query current power state (`running`, `poweroff`, …) |
-| `prepare_debug_session` | **One-shot**: stop → attach floppy → configure GDB stub → start VM |
+| `prepare_debug_session` | **One-shot**: stop → attach floppy → configure selected debug provider (`gdb` or `native`) → start VM |
 | `attach_floppy` | Attach `floppy.img` to the VM floppy drive (VM must be off) |
 | `configure_gdb_stub` | Set up the VirtualBox GDB stub (VM must be off) |
 | `start_vm` | Start VM — `gui: true/false` controls window vs headless |
@@ -143,12 +144,14 @@ the MCP client config (see above) or exporting them in the shell.
 | `pause_vm` | Pause execution |
 | `resume_vm` | Resume execution |
 
-### GDB / debug
+### Debug
 
 | Tool | Description |
 |---|---|
-| `connect_gdb` | Spawn GDB, set arch to `i8086`, connect to stub |
-| `disconnect_gdb` | Disconnect and exit GDB |
+| `get_debug_backend` | Report active backend and strict-mode selection info |
+| `get_debug_capabilities` | Report per-operation backend capability flags |
+| `connect_gdb` | Connect selected backend (`gdb` launches GDB client, `native` is no-op connect) |
+| `disconnect_gdb` | Disconnect selected backend |
 | `set_breakpoint` | Hardware breakpoint at flat physical address |
 | `set_breakpoint_segoff` | Hardware breakpoint at segment:offset |
 | `delete_breakpoint` | Remove breakpoint by flat address |
@@ -163,6 +166,10 @@ the MCP client config (see above) or exporting them in the shell.
 | `write_memory` | Write bytes to flat physical address |
 | `disassemble` | Disassemble N instructions at flat address |
 
+When backend is `native`, unsupported operations (breakpoints, memory read/write,
+instruction stepping, disassembly) return `ok=false` with
+`error="unsupported_by_backend"`.
+
 ### Addressing helpers
 
 | Tool | Description |
@@ -176,8 +183,8 @@ the MCP client config (see above) or exporting them in the shell.
 
 ```
 1. build_image                        # rebuild floppy.img from source
-2. prepare_debug_session              # stop VM → attach image → configure GDB stub → start VM (GUI)
-3. connect_gdb (timeout=20)           # wait for stub, connect with i8086 arch
+2. prepare_debug_session              # stop VM → attach image → configure backend provider → start VM (GUI)
+3. connect_gdb (timeout=20)           # connect debugger backend
 4. set_breakpoint (flat_addr=0x7C00)  # break at stage-1 BIOS entry point
 5. set_breakpoint (flat_addr=0x8000)  # break at stage-2 entry point
 6. continue_execution                 # let the VM run until breakpoint
@@ -208,6 +215,29 @@ Key boot-loader physical addresses:
 
 Use `set_breakpoint(0x7C00)` or `set_breakpoint_segoff(0x0000, 0x7C00)` —
 both resolve to the same physical address.
+
+---
+
+## Running tests
+
+```bash
+# From mcp-server/
+python3 -m pytest tests/test_server.py -q
+
+# Strict backend-only tests (quick filter)
+python3 -m pytest tests/test_server.py -q -k strict
+
+# Force strict native backend path
+VBOX_DEBUG_BACKEND=native python3 -m pytest tests/test_server.py -q -k strict
+
+# Force strict gdb backend path (requires gdb on PATH)
+VBOX_DEBUG_BACKEND=gdb python3 -m pytest tests/test_server.py -q -k strict
+```
+
+Notes:
+- `strict` tests validate backend selection and capability/error contracts.
+- In strict `gdb` mode without a `gdb` binary, the server reports
+    `error="debug_backend_unavailable"`.
 
 ---
 
