@@ -30,7 +30,7 @@ from mcp.client.stdio import stdio_client
 # Paths
 # ---------------------------------------------------------------------------
 
-MCP_SERVER_DIR = Path(__file__).parent.parent   # mcp-server/
+MCP_SERVER_DIR = Path(__file__).parent.parent / "mcp-server"   # mcp-server/
 SERVER_SCRIPT  = MCP_SERVER_DIR / "server.py"
 PYTHON         = sys.executable                 # same interpreter / venv
 

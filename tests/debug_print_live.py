@@ -41,7 +41,7 @@ async def call(session: ClientSession, tool_name: str, **kwargs):
 async def mcp_session():
     """Connect to MCP server over stdio."""
     params = StdioServerParameters(
-        command="/Users/brian/bin/vscode/boot-loader/.venv/bin/python",
+        command=str(MCP_SERVER / ".venv/bin/python"),
         args=[str(MCP_SERVER / "server.py")],
         env={
             **os.environ,
