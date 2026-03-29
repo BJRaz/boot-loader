@@ -1,53 +1,69 @@
 org	0x8000			; address labels originates from here .. this is an offset, and CS is 0 at boottime
 bits 	16
 
+; **********************
+; Macros
+; **********************
+%macro setup_interrupt 2
+	mov	ax, %1
+	mov	word [es:%2<<2], ax		; set offset
+	mov	[es:(%2<<2)+2], cs		; set segment
+%endmacro
+
+; **********************
+; Constants
+; **********************
+INT_DIVZERO	equ 0x00	; Division by zero interrupt vector
+INT_KEYBOARD	equ 0x09	; Keyboard interrupt vector (IRQ 1)
+INT_CUSTOM	equ 0x80	; Custom interrupt vector
+INT_TIMER	equ 0x1c	; System timer tick interrupt vector
+
 section .text
 	cli			; clear interrupt flag
+
+	; Debug: Print stage 2 initialized
+	mov	si, msg_boot2_start
+	call	print
+
 ; *********************
 ; IDT setup
 ; *********************
-	mov	ax, divisionbyzero
-	mov	word [es:0x0<<2], ax	; tries to add interrupt routine for  
-	mov	[es:(0x0<<2)+2], cs	; devision by zero (interrupt vector index 0)
+	mov	si, msg_idt_setup
+	call	print
 
-	mov	ax, keyboard 
-	mov	word [es:0x09<<2], ax	; REAL-ADDRESS-MODE - keyborad (irq 1) maps to vector 0x09 
-	mov	[es:(0x09<<2)+2], cs	; 
+	setup_interrupt divisionbyzero, INT_DIVZERO
+	setup_interrupt keyboard, INT_KEYBOARD
+	setup_interrupt interrupt, INT_CUSTOM
+	setup_interrupt timer, INT_TIMER
+
+	mov	si, msg_idt_done
+	call	print
+
+	int	0x80			; test custom interrupt
 	
-	mov	ax,interrupt 
-	mov	word [es:0x80<<2], ax	; se intel manual, 3-482. Vol 2A, INT n... REAL-ADDRESS-MODE 
-	mov	[es:(0x80<<2)+2], cs	;  
-	
-	mov	ax,timer		; - reinstate if needed.... (for scheduler)
-	mov	word [es:0x1c<<2], ax	; 'listens' to timer ticks called from INT 8 (RTC timer) 
-	mov	[es:(0x1c<<2)+2], cs	; int 1c (28) System Timer Tick
-
-					; locally defined interrupt	
-
-					; https://stackoverflow.com/questions/18879479/custom-irq-handler-in-real-mode
-	int 	0x80			; calls locally defined interrupt.
-
-	mov	si,done
+	mov	si, done
 	call	print
 ; ****************
-; initialize keybord controller (TODO)
+; initialize keyboard controller (TODO)
 ; ****************
 
-	sti	 			; restore interrupts
+	mov	si, msg_interrupts_enabled
+	call	print
+	sti				; restore interrupts
 
 misc:
-	mov	si,prompt
-	call 	print
+	mov	si, prompt
+	call	print
 
-;	call 	enterstring
+;	call	enterstring
 mainloop:
 	;push	done
 	;call	println 	
 	;jmp	mainloop
-	;call 	halt
+	;call	halt
 halt:
-	mov	si,halted
-	call 	print
+	mov	si, halted
+	;call	print
 	hlt
 	jmp	halt		; loop back to "halt", needed if an exception returns with IRET
 				; points to hlt + 1
@@ -169,112 +185,113 @@ enterstring:
 ; *********************
 interrupt:
 	push	si
-	; do something.
-	mov 	si,test
+	mov	si, test
 	call	print
-	pop 	si
+	pop	si
 	iret
+
 divisionbyzero:
-	mov	si,div0
-	call 	print
-	;mov	ah,0x0		; should handle exception by throwing to process (while it is the process fault what this happens)
-	;int	0x3		; for example as POSIX does, throw this as a SIGFPE signal (and this should be handled)
-	;iret
+	push	si
+	mov	si, div0
+	call	print
+	pop	si
 	jmp	misc	
 
 timer:
 	push	si
-	push 	ax
+	push	ax
 	push	bx
-	push 	cx
+	push	cx
 	push	dx
-	push	ds		; this routine (roughly) counts ticks (55 ms) and writes to screen for every second passed 
-	xor 	ax,ax		; reset ax
-	mov	ds,ax		; set ds to 0, while ds has value of 0x0040 for some reason
-				; check why online !
+	push	ds
+	xor	ax, ax		; reset ax
+	mov	ds, ax		; set ds to 0 for proper timer interrupt handling
 	xor	bx, bx
 	xor	dx, dx
 	mov	bx, [ticks]
 	inc	bx
 	mov	ax, bx
 	div	word [divisor]
-	cmp	dx, 0		;
+	cmp	dx, 0
 	jne	.end
-	;mov	si, sched	;ticks	 sched
-	push	sched
-	call	println
+;	push	sched
+;	call	println
 	pop	cx
 .end:
 	mov	[ticks], bx
 	pop	ds
 	pop	dx
-	pop 	cx
+	pop	cx
 	pop	bx
 	pop	ax
 	pop	si
 	iret
+
 keyboard:
-	;push	bp	
-	;mov	bp, sp
 	push	ax
 	push	bx
 	push	si
 	in	al, 0x60		; read info from keyboard
 	mov	bl, al
-	cmp	bl, 0x1e		; 'A'
+	cmp	bl, 0x1e		; 'A' key
 	je	.a
-	cmp	bl, 0x39		; 'space'
+	cmp	bl, 0x39		; 'space' key
 	je	.space
 	push	keydefault	
-	call 	println		
+	call	println		
 	pop	cx	
 	jmp	.out
 .a:
-	push 	keyb	
-	call 	println
+	push	keyb	
+	call	println
 	pop	ax
 	jmp	.out
 .space:
 	int	0x80
 	jmp	.out	
 .out:
-	mov	al, 0x20		; acknowledge to PIC (EOI)
+	mov	al, 0x20		; acknowledge to PIC (EOI - End Of Interrupt)
 	out	0x20, al
 	pop	si
 	pop	bx
 	pop	ax
-	
 	iret
 
 
 crs:
-	mov	si,cr	
-	call 	print
+	push	si
+	mov	si, cr	
+	call	print
+	pop	si
 	ret
 section .data
 
 ;	ascii codes:
 ;	0x0d = CR (carrige return)
 ;	0x0a = LF (line feed)
-readok:		db 	"read ok",0x0d,0x0a,0
-cr:		db 	0x0d,0x0a,0
-halted:		db 	"System halted",0
-msg:		db 	"Hello from Brians boot-sector",0x0D,0x0A,0
-msg2:		db 	"Message no. 2...",0x0D,0x0A,0
-menu:		db 	"1 for enter text, q for exit",0x0d,0x0a,0
-prompt:		db 	"> ",0
-bell:		db	0x07,0
-procedure: 	db 	0x0
-test:		db	"Called from 0x80 interrupt (internal test)",13,10,0
-div0:		db 	"Division by zero exception!",13,10,0
-done:		db	"Interrupt done",13,10,0
-result:	times 2	db	0
-ticks:		dw	1
-divisor:	dw	0x12	; 18
-sched:		db	"Change task interrupt",13,10,0
-keyb:		db	"Some key pressed",13,10,0
-keydefault:	db 	"Another key pressed", 13, 10 ,0
-buffer:	times	128 db 0	; string buffer
+msg_boot2_start:	db	"[BOOT2] Stage 2 initialized at 0x8000",13,10,0
+msg_idt_setup:		db	"[BOOT2] Setting up interrupt handlers...",13,10,0
+msg_idt_done:		db	"[BOOT2] IDT setup complete",13,10,0
+msg_interrupts_enabled:	db	"[BOOT2] Interrupts enabled",13,10,0
+readok:			db 	"read ok",0x0d,0x0a,0
+cr:			db 	0x0d,0x0a,0
+halted:			db 	"System halted",0
+msg:			db 	"Hello from Brians boot-sector",0x0D,0x0A,0
+msg2:			db 	"Message no. 2...",0x0D,0x0A,0
+menu:			db 	"1 for enter text, q for exit",0x0d,0x0a,0
+prompt:			db 	"> ",0
+bell:			db	0x07,0
+procedure: 		db 	0x0
+test:			db	"Called from 0x80 interrupt (internal test)",13,10,0
+div0:			db 	"Division by zero exception!",13,10,0
+done:			db	"Interrupt done",13,10,0
+result:			times 2	db	0
+ticks:			dw	1
+divisor:		dw	0x12	; 18
+sched:			db	"Change task interrupt",13,10,0
+keyb:			db	"Some key pressed",13,10,0
+keydefault:		db 	"Another key pressed", 13, 10 ,0
+buffer:			times	128 db 0	; string buffer
 
 section	.bss
 string:		resb	128	
