@@ -1,35 +1,73 @@
 org	0x8000			; address labels originates from here .. this is an offset, and CS is 0 at boottime
-bits 	16
+bits 	16			; sets 16 bit mode
+
+%define	PIC_EOI			0x20
+%define PIC1_COMMAND		0x20
+%define PIC2_COMMAND		0xa0
 
 section .text
 	cli			; clear interrupt flag
 ; *********************
-; IDT setup
+; IVT setup
 ; *********************
+	; Note:
+	;	The PC bios normally maps the IRQ0-IRQ7 to an offset of 8 
+	;	relative to the interrupt vector table (int 0x8 - int 0x0f), and the IRQ8-IRQ15 to an offset
+	;	of 112 (int 70 - int int 77)
+	;
+	;	The index is multiplied by four, as the IVT has entries of 2 * 16bits (4 bytes)
+	;	The index is mapped as an offset:segment starting from 0
+	;
+	
 	mov	ax, divisionbyzero
-	mov	word [es:0x0<<2], ax	; tries to add interrupt routine for  
-	mov	[es:(0x0<<2)+2], cs	; devision by zero (interrupt vector index 0)
-
+	mov	[es:0x0<<2], ax		; add interrupt routine for division by zero 
+	mov	[es:(0x0<<2)+2], cs	; internal intel mapped interrupt, index 0x0
+					;  - , index 0x1 is not mapped
+					;  - , index 0x2 is not mapped
+					;  - , index 0x3 is not mapped
+					;  - , index 0x4 is not mapped
+					;  - , index 0x5 is not mapped
+					;  - , index 0x6 is not mapped
+					;  - , index 0x7 is not mapped
+					; IRQ0, index 0x08: 	PIT
 	mov	ax, keyboard 
-	mov	word [es:0x09<<2], ax	; REAL-ADDRESS-MODE - keyborad (irq 1) maps to vector 0x09 
-	mov	[es:(0x09<<2)+2], cs	; 
-	
-	mov	ax,interrupt 
-	mov	word [es:0x80<<2], ax	; se intel manual, 3-482. Vol 2A, INT n... REAL-ADDRESS-MODE 
-	mov	[es:(0x80<<2)+2], cs	;  
-	
-	mov	ax,timer		; - reinstate if needed.... (for scheduler)
-	mov	word [es:0x1c<<2], ax	; 'listens' to timer ticks called from INT 8 (RTC timer) 
-	mov	[es:(0x1c<<2)+2], cs	; int 1c (28) System Timer Tick
+	mov	[es:0x9*4],ax		; keyboard routine 
+	mov	[es:0x9*4+2], cs	; IRQ1, index 0x09: 	Keyboard 
+					; IRQ2, index 0xa:	8259A slave
+					; IRQ3, index 0xb:	COM2 / COM4
+					; IRQ4, index 0xc:	COM1 / COM3
+					; IRQ5, index 0xd:	LPT2
+					; IRQ6, index 0xe:	Floppy Controller
+					; IRQ7, index 0xf:	LPT1
+				
+					; IRQ8, index 0x70:	RTC
+					;  
+					;
+					;
+	mov	ax, mouse		; IRQ12, index 0x74:	Mouse
+	mov	[es:0x74*4], ax
+	mov	[es:0x74*4+2],cs	
+
+					; IRQ13, index 0x75:  	Math Coprocessor
+					; IRQ14, index 0x76:	HDD controller 1
+					; IRQ15, index 0x77:	HDD controller 2
+	;mov	ax,timer		; (for scheduler)
+	;mov	word [es:0x1c<<2], ax	; timer routine; 'listens' to timer ticks called from (irq 8) (RTC timer) 
+	;mov	[es:(0x1c<<2)+2], cs	; interrupt vector index 0x1c (decimal 28) System Timer Tick
 
 					; locally defined interrupt	
+	
+	mov	ax,interrupt 
+	mov	[es:0x80<<2], ax	; se intel manual, 3-482. Vol 2A, INT n... REAL-ADDRESS-MODE 
+	mov	[es:(0x80<<2)+2], cs	; intterupt vector index 0x80 (decimal 128) 
+	
 
 	sti	 			; restore interrupts
 					; https://stackoverflow.com/questions/18879479/custom-irq-handler-in-real-mode
-	int 	0x80			; calls locally defined interrupt.
+	int	0x80			; test: calls locally defined interrupt.
 
-	mov	si,done
-	call	print
+	jmp	mainloop
+
 ; ****************
 ; initialize keybord controller (TODO)
 ; ****************
@@ -44,13 +82,8 @@ misc:
 
 	;call 	enterstring
 mainloop:
-	;push	done
-	;call	println 	
-	;jmp	mainloop
-
-	;call 	halt
-	mov	si,halted
-	call 	print
+	push	halted
+	call 	println
 halt:
 	hlt
 	jmp 	halt	
@@ -176,11 +209,8 @@ enterstring:
 ; RINGBUFFER
 ; ***********
 ring_buffer_init:
-	pusha
-	mov	ax, rb
 	mov	[rb_head], word 0 
 	mov	[rb_tail], word 0
-	popa
 	ret
 ring_buffer_insert:
 	push	bp
@@ -192,7 +222,6 @@ ring_buffer_insert:
 	mov	bx, [rb_head]
 	mov	[rb+bx], ax
 	inc	word [rb_head]
-
 	pop	bx
 	pop	ax
 	pop	bp
@@ -218,21 +247,37 @@ ring_buffer_get:
 ; *********************
 ; INTERRUPT HANDLERS
 ; *********************
+; -------------------------------
+;	INTERRUPT HANDLER:
+;
+
 interrupt:
 	push	si
 	; do something.
 	mov 	si,test
 	call	print
+	mov	al, PIC_EOI
+	out	PIC1_COMMAND, al
+	out	PIC2_COMMAND, al
 	pop 	si
 	iret
+; --------------------------------
+;	Dvivision By Zero Handler
+;
 divisionbyzero:
 	mov	si,div0
 	call 	print
 	;mov	ah,0x0		; should handle exception by throwing to process (while it is the process fault what this happens)
 	;int	0x3		; for example as POSIX does, throw this as a SIGFPE signal (and this should be handled)
 	;iret
-	jmp	misc	
-
+	mov	al, PIC_EOI
+	out	PIC1_COMMAND, al
+	out	PIC2_COMMAND, al
+	;jmp	misc
+	iret	
+; --------------------------------	
+;	Timer handler
+;
 timer:
 	pusha			; push all gp registers etc.
 	push	ds		; this routine (roughly) counts ticks (55 ms) and writes to screen for every second passed 
@@ -262,20 +307,27 @@ timer:
 	mov	[ticks], bx
 	pop	ds
 	popa
+	mov	al, PIC_EOI		; acknowledge to PIC (EOI)
+	out	PIC1_COMMAND, al
+	out 	PIC2_COMMAND, al
 	iret
+; ---------------------------------
+;	Keyboard handler
+;
 keyboard:
 	;push	bp	
 	;mov	bp, sp
 	push	ax
 	push	bx
 	push	dx
-	mov	dx, 0x1e
 	push	si
+	mov	dx, 0x1e
 	in	al, 0x60		; read info from keyboard
 	mov	bl, al
 	push	dx	
 	call 	ring_buffer_insert
 	pop	dx
+	jmp	.out
 	cmp	bl, 0x1e		; 'A'
 	je	.a
 	cmp	bl, 0x39		; 'space'
@@ -283,7 +335,6 @@ keyboard:
 	push	hest2			; TODO - change back to	keydefault	
 	call 	println		
 	pop	cx	
-	jmp	.out
 .a:
 	push	ax
 	cmp	byte [display], 0
@@ -295,8 +346,9 @@ keyboard:
 	jmp	.end
 .shift:	
 	mov	ah, 0
-	mov	al, 0x12
+	mov	al, 0x13
 	int	0x10
+	call	testvga
 	mov	byte [display], 1
 .end:
 	pop	ax		
@@ -308,20 +360,50 @@ keyboard:
 	int	0x80
 	jmp	.out	
 .out:
-	mov	al, 0x20		; acknowledge to PIC (EOI)
-	out	0x20, al
-	pop	dx
+	mov	al, PIC_EOI		; acknowledge to PIC (EOI)
+	out	PIC1_COMMAND, al
+	out 	PIC2_COMMAND, al
 	pop	si
+	pop	dx
 	pop	bx
 	pop	ax
 	
 	iret
-
-
+; -----------------------------------
+; 	Mouse handler
+;
+mouse:
+	push	ax
+	mov	si, mousestr
+	call	print
+	mov	al, PIC_EOI		; acknowledge to PIC (EOI)
+	out	PIC1_COMMAND, al
+	out 	PIC2_COMMAND, al
+	pop ax
+	iret
 crs:
 	mov	si,cr	
 	call 	print
 	ret
+; **********
+; VGA tests
+; **********
+testvga:
+	push	ax
+	push	cx
+	push	dx
+
+	mov	cx, 160		; x value
+	mov	dx, 100		; y value
+	mov	al, 15		; pixel color white
+	mov	ah, 0x0c	; write pixel at x,y
+	int	0x10		; call bios graphics routine
+	
+	pop	dx
+	pop	cx
+	pop	ax
+	ret
+
 section .data
 
 ;	ascii codes:
@@ -353,7 +435,7 @@ rb_head:	dw	0
 rb_tail:	dw	0
 hest2:		db	"B",0	
 display:	db	0
-
+mousestr:	db	"Mouse...", 13, 10, 0
 
 section	.bss
 string:		resb	128	

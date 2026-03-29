@@ -10,7 +10,7 @@ start:
 	;int	0x03		; debug
 	cli			; clear interrupt flag
 	cld			; clear DF flag for auto-increment SI in string operations
-	mov	ax,0
+	xor	ax, ax
 	;mov	cs,ax
 	mov	ds,ax		; clear segment registers
 	mov	ss,ax		; set stack segment other than 0 before far calls, jmps etc... 
