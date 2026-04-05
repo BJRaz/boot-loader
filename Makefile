@@ -34,7 +34,7 @@ floppy-image: $(BOOT_IMAGE)
 
 # Run bootloader with QEMU (if available)
 run: $(BOOT_IMAGE)
-	qemu-system-i386 -fda $(BOOT_IMAGE) 2>/dev/null || echo "QEMU not found. Use 'make run-vbox' for VirtualBox instead."
+	qemu-system-i386 -nic none -nographic -fda $(BOOT_IMAGE) 2>/dev/null || echo "QEMU not found. Use 'make run-vbox' for VirtualBox instead."
 
 # Run bootloader with VirtualBox using existing VM
 run-vbox: $(BOOT_IMAGE)

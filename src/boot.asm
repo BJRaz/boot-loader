@@ -20,6 +20,11 @@ SECTOR			equ 2			; sector 2 (boot sector is 1)
 HEAD			equ 0
 DRIVE			equ 0
 
+
+; BIOS services:
+BIOS_VIDEO_SERVICE	equ	0x10	;
+BIOS_DISK_SERVICE	equ	0x13	;
+
 section .text
 
 
@@ -48,7 +53,7 @@ start:
 ; **********************
 	mov	ah, 0			; SET VIDEO MODE
 	mov	al, VIDEO_MODE		; 80x25 text mode
-	int	0x10			; set video mode
+	int	BIOS_VIDEO_SERVICE			; set video mode
 
 	; Debug: Print video mode set
 	mov	si, msg_video_set
@@ -57,7 +62,7 @@ start:
 	mov	ch, CURSOR_START	; show box shaped cursor
 	mov	cl, CURSOR_END
 	mov	ah, 1
-	int	0x10			; interrupt 10h - video services
+	int	BIOS_VIDEO_SERVICE	; interrupt 10h - video services
 
 	; Debug: Print cursor set
 	mov	si, msg_cursor_set
@@ -68,7 +73,7 @@ start:
 	mov	cx, SCREEN_SIZE	; how many times 
 	mov	al, SPACE_CHAR	; write space character
 	mov	bl, VRAM_ATTR	; background blue, foreground light gray
-	int	0x10			; interrupt 10h - video services
+	int	BIOS_VIDEO_SERVICE			; interrupt 10h - video services
 	
 	mov	[databuffer], word BOOT2_ADDR
 				; http://staff.ustc.edu.cn/~xyfeng/research/cos/resources/BIOS/Resources/assembly/int1c.html
@@ -99,7 +104,7 @@ start:
 diskops:
 	mov	ah, 0		; reset drive
 	mov	dl, DRIVE
-	int	0x13
+	int	BIOS_DISK_SERVICE
 
 	; Debug: Print disk reset done
 	mov	si, msg_disk_reset
@@ -115,7 +120,7 @@ diskops:
 	mov	bx, 0
 	mov	es, bx		; set es = 0
 	mov	bx, [databuffer]; set bx = address (ES:BX = 0:offset)
-	int	0x13
+	int 	BIOS_DISK_SERVICE	
 
 	cmp	ah, 0
 	jz	.diskreadok
@@ -158,4 +163,4 @@ msg_boot2_jump:		db	"[BOOT] Jumping to stage 2 at 0x8000...",13,10,0
 readok:			db 	"Disk read ok",13,10,0
 databuffer:		dw	0	
 times			510 - ($-$$)	db 0
-dw	0x55aa
+dw	0xaa55
