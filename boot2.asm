@@ -4,9 +4,19 @@ bits 	16			; sets 16 bit mode
 %define	PIC_EOI			0x20
 %define PIC1_COMMAND		0x20
 %define PIC2_COMMAND		0xa0
+%define PIC1_DATA		0x21
+%define PIC2_DATA		0xa1
 
 section .text
 	cli			; clear interrupt flag
+
+	; Explicitly set es=0 for safe IVT access
+	xor	ax, ax
+	mov	es, ax
+
+	; Initialize 8259A PICs before enabling any interrupts
+	call	pic_init
+
 ; *********************
 ; IVT setup
 ; *********************
@@ -67,6 +77,45 @@ section .text
 	int	0x80			; test: calls locally defined interrupt.
 
 	jmp	mainloop
+
+; ************************************
+; pic_init: Initialize 8259A PICs
+;
+; Reinitializes both PIC chips with
+; the standard BIOS real-mode vector
+; offsets (PIC1 -> INT 0x08..0x0f,
+; PIC2 -> INT 0x70..0x77) and sets
+; x86 mode.  Interrupts must be
+; disabled (cli) before calling.
+; ************************************
+pic_init:
+	; ICW1 - start init sequence:
+	;   bit4=1  init command
+	;   bit3=0  edge triggered
+	;   bit1=0  cascade mode
+	;   bit0=1  ICW4 will follow
+	mov	al, 0x11
+	out	PIC1_COMMAND, al
+	out	PIC2_COMMAND, al
+
+	; ICW2 - vector offsets (BIOS real-mode defaults)
+	mov	al, 0x08	; PIC1: IRQ0-7  -> INT 0x08-0x0f
+	out	PIC1_DATA, al
+	mov	al, 0x70	; PIC2: IRQ8-15 -> INT 0x70-0x77
+	out	PIC2_DATA, al
+
+	; ICW3 - cascade wiring
+	mov	al, 0x04	; master: slave connected to IRQ2
+	out	PIC1_DATA, al
+	mov	al, 0x02	; slave: cascade identity = 2
+	out	PIC2_DATA, al
+
+	; ICW4 - 8086/88 mode, normal EOI
+	mov	al, 0x01
+	out	PIC1_DATA, al
+	out	PIC2_DATA, al
+
+	ret
 
 ; ****************
 ; initialize keybord controller (TODO)
