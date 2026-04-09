@@ -30,6 +30,28 @@ BUILD_CWD: Path = Path(
 ).resolve()
 
 # ---------------------------------------------------------------------------
+# Hypervisor selection
+# ---------------------------------------------------------------------------
+
+# Which hypervisor/emulator to use for VM lifecycle operations.
+# "vbox" → VirtualBox (VBoxManage)
+# "qemu" → QEMU (qemu-system-i386)
+HYPERVISOR: str = os.environ.get("HYPERVISOR", "vbox").strip().lower()
+
+# ---------------------------------------------------------------------------
+# QEMU settings
+# ---------------------------------------------------------------------------
+
+# Path to the qemu-system-i386 binary (auto-detected from PATH).
+# Override with QEMU_BINARY env var if the binary has a different name/path.
+QEMU_BINARY: str | None = shutil.which(os.environ.get("QEMU_BINARY", "qemu-system-i386"))
+
+# QEMU display backend.
+# "none" = headless (recommended for MCP/debug use).
+# "sdl" or "gtk" = graphical window.
+QEMU_DISPLAY: str = os.environ.get("QEMU_DISPLAY", "none")
+
+# ---------------------------------------------------------------------------
 # VirtualBox VM settings
 # ---------------------------------------------------------------------------
 

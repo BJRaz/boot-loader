@@ -260,6 +260,13 @@ class GdbClient:
         if not self._require_connected():
             return self._not_connected()
         resp = self._send_cmd("-exec-interrupt")
+        # Drain output until *stopped arrives so callers can safely query
+        # registers immediately after this returns.
+        for _ in range(20):
+            extra = self._controller.get_gdb_response(timeout_sec=1.0, raise_error_on_timeout=False) or []
+            resp += extra
+            if any(m.get("type") == "notify" and m.get("message") == "stopped" for m in extra):
+                break
         return {"ok": True, "output": "Execution interrupted.", "detail": resp}
 
     # ------------------------------------------------------------------
@@ -416,8 +423,10 @@ class GdbClient:
     def _send_cmd(self, cmd: str) -> list:
         """Send a GDB/MI command and return the response messages."""
         try:
-            self._controller.write(cmd, timeout_sec=_GDB_TIMEOUT, raise_error_on_timeout=False)
-            return self._controller.get_gdb_response(timeout_sec=_GDB_TIMEOUT, raise_error_on_timeout=False) or []
+            # write() sends the command and reads the response (read_response=True
+            # is the pygdbmi default). Use its return value directly — calling
+            # get_gdb_response() afterwards would read from an already-drained buffer.
+            return self._controller.write(cmd, timeout_sec=_GDB_TIMEOUT, raise_error_on_timeout=False) or []
         except GdbTimeoutError:
             return [{"type": "error", "payload": f"Timeout waiting for response to: {cmd}"}]
         except Exception as exc:
@@ -428,8 +437,8 @@ class GdbClient:
         """Extract a named payload from a GDB/MI result message list."""
         for msg in msgs:
             if msg.get("type") == "result" and msg.get("message") == "done":
-                payload = msg.get("payload") or {}
-                if key in payload:
+                payload = msg.get("payload")
+                if isinstance(payload, dict) and key in payload:
                     return payload[key]
         return None
 
@@ -437,13 +446,14 @@ class GdbClient:
     def _parse_bp_number(msgs: list) -> Optional[str]:
         """Parse the breakpoint number from a -break-insert or hbreak response."""
         for msg in msgs:
-            payload = msg.get("payload") or {}
-            bkpt = payload.get("bkpt") or {}
-            if "number" in bkpt:
-                return bkpt["number"]
+            payload = msg.get("payload")
+            if isinstance(payload, dict):
+                bkpt = payload.get("bkpt") or {}
+                if "number" in bkpt:
+                    return bkpt["number"]
             # Fallback: scan console output for 'Breakpoint N at ...'
-            if msg.get("type") == "console":
-                m = re.search(r"Breakpoint\s+(\d+)", msg.get("payload", ""))
+            if msg.get("type") == "console" and isinstance(payload, str):
+                m = re.search(r"Breakpoint\s+(\d+)", payload)
                 if m:
                     return m.group(1)
         return None

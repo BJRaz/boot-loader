@@ -1,19 +1,41 @@
 """
-server.py — MCP server (stdio transport) for VirtualBox 7.0 boot-loader debugging.
+server.py — MCP server (stdio transport) for boot-loader debugging.
+
+Supports two hypervisors selected via the HYPERVISOR environment variable:
+  HYPERVISOR=vbox  (default) — VirtualBox 7.0 via VBoxManage
+  HYPERVISOR=qemu            — QEMU (qemu-system-i386)
 
 Run:
     python3 server.py
 
 MCP client configuration (Claude Desktop / VS Code):
+
+  VirtualBox:
     {
         "mcpServers": {
-            "vbox-boot-debug": {
+            "boot-debug": {
                 "command": "python3",
                 "args": ["/path/to/mcp-server/server.py"],
                 "env": {
+                    "HYPERVISOR": "vbox",
                     "VBOX_VM_NAME": "boot-loader",
                     "VBOX_GDB_PORT": "5037",
                     "VBOX_START_GUI": "true"
+                }
+            }
+        }
+    }
+
+  QEMU:
+    {
+        "mcpServers": {
+            "boot-debug": {
+                "command": "python3",
+                "args": ["/path/to/mcp-server/server.py"],
+                "env": {
+                    "HYPERVISOR": "qemu",
+                    "VBOX_GDB_PORT": "5037",
+                    "QEMU_DISPLAY": "none"
                 }
             }
         }
@@ -68,6 +90,7 @@ from mcp.server import Server
 
 import config
 import vbox
+import qemu
 from gdb_client import GdbClient, seg_off_to_flat, flat_to_seg_off
 
 # ---------------------------------------------------------------------------
@@ -167,63 +190,79 @@ async def list_tools() -> list[types.Tool]:
         # -- VM lifecycle --
         _tool(
             "get_vm_state",
-            f"Return the current power state of VM '{config.VM_NAME}' "
-            "(e.g. 'running', 'poweroff', 'saved', 'aborted').",
+            f"Return the current power state of the VM (hypervisor: {config.HYPERVISOR}). "
+            "States: 'running', 'poweroff'. VirtualBox also reports 'saved', 'aborted'.",
             {
-                "vm_name": _str_prop(f"VM name (default: {config.VM_NAME})"),
+                "vm_name": _str_prop(f"VirtualBox VM name (default: {config.VM_NAME}). Ignored for QEMU."),
             },
         ),
         _tool(
             "prepare_debug_session",
-            "One-shot convenience tool: powers off the VM (if running), attaches the floppy image, "
-            "configures the VirtualBox GDB stub, then starts the VM. "
-            "After this call, connect GDB with `target remote localhost:<port>`.",
+            f"One-shot convenience tool (hypervisor: {config.HYPERVISOR}): "
+            "stops any running VM, then starts a fresh instance halted at startup (-S for QEMU / GDB stub for VirtualBox). "
+            "After this call, connect GDB with `target remote <host>:<port>` then call continue_execution.",
             {
-                "gui": _bool_prop("Start VM with GUI window (true) or headless (false).", default=config.START_GUI),
-                "vm_name": _str_prop(f"VM name (default: {config.VM_NAME})"),
                 "image_path": _str_prop(f"Absolute path to floppy image (default: {config.FLOPPY_IMAGE})"),
-                "gdb_host": _str_prop(f"GDB stub host (default: {config.GDB_HOST})"),
-                "gdb_port": _int_prop(f"GDB stub port (default: {config.GDB_PORT})"),
+                "gdb_host":   _str_prop(f"GDB stub host (default: {config.GDB_HOST})"),
+                "gdb_port":   _int_prop(f"GDB stub port (default: {config.GDB_PORT})"),
+                # VirtualBox-only
+                "vm_name": _str_prop(f"[VirtualBox] VM name (default: {config.VM_NAME})"),
+                "gui":     _bool_prop("[VirtualBox] Start with GUI window.", default=config.START_GUI),
+                # QEMU-only
+                "display": _str_prop(f"[QEMU] Display backend: 'none'=headless, 'sdl'/'gtk'=window (default: {config.QEMU_DISPLAY})"),
             },
         ),
         _tool(
             "attach_floppy",
-            "Attach a floppy image to the VM. The VM must be powered off.",
+            "[VirtualBox] Attach a floppy image to the VM (VM must be powered off). "
+            "For QEMU, the floppy is set at launch time — this returns an informational message.",
             {
                 "image_path": _str_prop(f"Absolute path to floppy image (default: {config.FLOPPY_IMAGE})"),
-                "vm_name": _str_prop(f"VM name (default: {config.VM_NAME})"),
+                "vm_name":    _str_prop(f"VM name (default: {config.VM_NAME})"),
             },
         ),
         _tool(
             "configure_gdb_stub",
-            "Configure the VirtualBox built-in GDB stub on the VM. The VM must be powered off. "
-            "Sets provider=gdb, io=tcp, address=host, port=port.",
+            "[VirtualBox] Configure the built-in GDB stub (VM must be powered off). "
+            "For QEMU, the GDB stub is built-in and configured at launch — this returns an informational message.",
             {
-                "vm_name": _str_prop(f"VM name (default: {config.VM_NAME})"),
+                "vm_name":  _str_prop(f"VM name (default: {config.VM_NAME})"),
                 "gdb_host": _str_prop(f"GDB listen address (default: {config.GDB_HOST})"),
                 "gdb_port": _int_prop(f"GDB listen port (default: {config.GDB_PORT})"),
             },
         ),
         _tool(
             "start_vm",
-            "Start the VM.",
+            f"Start the VM (hypervisor: {config.HYPERVISOR}). "
+            "For QEMU, launches qemu-system-i386 with -S (halted) and -gdb stub enabled.",
             {
-                "vm_name": _str_prop(f"VM name (default: {config.VM_NAME})"),
+                # VirtualBox-only
+                "vm_name": _str_prop(f"[VirtualBox] VM name (default: {config.VM_NAME})"),
                 "gui": _bool_prop(
-                    "True = launch with GUI window (--type gui). "
-                    "False = headless (--type headless).",
+                    "[VirtualBox] True = GUI window, False = headless.",
                     default=config.START_GUI,
                 ),
+                # QEMU-only
+                "image_path":    _str_prop(f"[QEMU] Floppy image path (default: {config.FLOPPY_IMAGE})"),
+                "gdb_host":      _str_prop(f"[QEMU] GDB stub host (default: {config.GDB_HOST})"),
+                "gdb_port":      _int_prop(f"[QEMU] GDB stub port (default: {config.GDB_PORT})"),
+                "halt_on_start": _bool_prop("[QEMU] Halt CPU at startup (-S flag). Recommended for debugging.", default=True),
+                "display":       _str_prop(f"[QEMU] Display backend (default: {config.QEMU_DISPLAY})"),
             },
         ),
-        _tool("stop_vm",   "Power off the VM immediately (hard off).",
-              {"vm_name": _str_prop(f"VM name (default: {config.VM_NAME})")}),
-        _tool("reset_vm",  "Hard reset the VM (like pressing the reset button).",
-              {"vm_name": _str_prop(f"VM name (default: {config.VM_NAME})")}),
-        _tool("pause_vm",  "Pause the VM.",
-              {"vm_name": _str_prop(f"VM name (default: {config.VM_NAME})")}),
-        _tool("resume_vm", "Resume a paused VM.",
-              {"vm_name": _str_prop(f"VM name (default: {config.VM_NAME})")}),
+        _tool("stop_vm",  f"Power off the VM immediately (hypervisor: {config.HYPERVISOR}).",
+              {"vm_name": _str_prop(f"[VirtualBox] VM name (default: {config.VM_NAME})")}),
+        _tool("reset_vm", f"Hard reset the VM (hypervisor: {config.HYPERVISOR}). For QEMU: stop + start.",
+              {
+                  "vm_name":      _str_prop(f"[VirtualBox] VM name (default: {config.VM_NAME})"),
+                  "image_path":   _str_prop(f"[QEMU] Floppy image path (default: {config.FLOPPY_IMAGE})"),
+                  "halt_on_start": _bool_prop("[QEMU] Halt CPU at startup after reset.", default=True),
+                  "display":      _str_prop(f"[QEMU] Display backend (default: {config.QEMU_DISPLAY})"),
+              }),
+        _tool("pause_vm",  "Pause the VM. [VirtualBox only] For QEMU, use interrupt_execution instead.",
+              {"vm_name": _str_prop(f"[VirtualBox] VM name (default: {config.VM_NAME})")}),
+        _tool("resume_vm", "Resume a paused VM. [VirtualBox only] For QEMU, use continue_execution instead.",
+              {"vm_name": _str_prop(f"[VirtualBox] VM name (default: {config.VM_NAME})")}),
 
         # -- GDB connection --
         _tool(
@@ -400,7 +439,10 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
 
     # -- VM lifecycle --
     elif name == "get_vm_state":
-        result = vbox.get_vm_state(arguments.get("vm_name", config.VM_NAME))
+        if config.HYPERVISOR == "qemu":
+            result = qemu.get_vm_state()
+        else:
+            result = vbox.get_vm_state(arguments.get("vm_name", config.VM_NAME))
 
     elif name == "prepare_debug_session":
         backend_err = _ensure_debug_backend("prepare_debug_session")
@@ -408,46 +450,113 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
             result = backend_err
             return [types.TextContent(type="text", text=json.dumps(result, indent=2))]
 
-        result = vbox.prepare_debug_session(
-            image_path=arguments.get("image_path", config.FLOPPY_IMAGE),
-            vm_name=arguments.get("vm_name", config.VM_NAME),
-            gdb_host=arguments.get("gdb_host", config.GDB_HOST),
-            gdb_port=int(arguments.get("gdb_port", config.GDB_PORT)),
-            debug_provider="native" if _debug_backend == "native" else "gdb",
-            gui=bool(arguments.get("gui", config.START_GUI)),
-        )
+        if config.HYPERVISOR == "qemu":
+            result = qemu.prepare_debug_session(
+                image_path=arguments.get("image_path", config.FLOPPY_IMAGE),
+                gdb_host=arguments.get("gdb_host", config.GDB_HOST),
+                gdb_port=int(arguments.get("gdb_port", config.GDB_PORT)),
+                display=arguments.get("display", config.QEMU_DISPLAY),
+            )
+        else:
+            result = vbox.prepare_debug_session(
+                image_path=arguments.get("image_path", config.FLOPPY_IMAGE),
+                vm_name=arguments.get("vm_name", config.VM_NAME),
+                gdb_host=arguments.get("gdb_host", config.GDB_HOST),
+                gdb_port=int(arguments.get("gdb_port", config.GDB_PORT)),
+                debug_provider="native" if _debug_backend == "native" else "gdb",
+                gui=bool(arguments.get("gui", config.START_GUI)),
+            )
         result = _add_backend(result)
 
     elif name == "attach_floppy":
-        result = vbox.attach_floppy(
-            image_path=arguments.get("image_path", config.FLOPPY_IMAGE),
-            vm_name=arguments.get("vm_name", config.VM_NAME),
-        )
+        if config.HYPERVISOR == "qemu":
+            result = {
+                "ok": True,
+                "output": (
+                    "QEMU: floppy image is passed at launch time via start_vm / prepare_debug_session. "
+                    f"Current image: {config.FLOPPY_IMAGE}"
+                ),
+            }
+        else:
+            result = vbox.attach_floppy(
+                image_path=arguments.get("image_path", config.FLOPPY_IMAGE),
+                vm_name=arguments.get("vm_name", config.VM_NAME),
+            )
 
     elif name == "configure_gdb_stub":
-        result = vbox.configure_gdb_stub(
-            vm_name=arguments.get("vm_name", config.VM_NAME),
-            host=arguments.get("gdb_host", config.GDB_HOST),
-            port=int(arguments.get("gdb_port", config.GDB_PORT)),
-        )
+        if config.HYPERVISOR == "qemu":
+            result = {
+                "ok": True,
+                "output": (
+                    "QEMU: GDB stub is built-in and configured at launch via -gdb tcp:<host>:<port>. "
+                    f"Current stub address: {config.GDB_HOST}:{config.GDB_PORT}"
+                ),
+            }
+        else:
+            result = vbox.configure_gdb_stub(
+                vm_name=arguments.get("vm_name", config.VM_NAME),
+                host=arguments.get("gdb_host", config.GDB_HOST),
+                port=int(arguments.get("gdb_port", config.GDB_PORT)),
+            )
 
     elif name == "start_vm":
-        result = vbox.start_vm(
-            vm_name=arguments.get("vm_name", config.VM_NAME),
-            gui=bool(arguments.get("gui", config.START_GUI)),
-        )
+        if config.HYPERVISOR == "qemu":
+            result = qemu.start_vm(
+                image_path=arguments.get("image_path", config.FLOPPY_IMAGE),
+                gdb_host=arguments.get("gdb_host", config.GDB_HOST),
+                gdb_port=int(arguments.get("gdb_port", config.GDB_PORT)),
+                halt_on_start=bool(arguments.get("halt_on_start", True)),
+                display=arguments.get("display", config.QEMU_DISPLAY),
+            )
+        else:
+            result = vbox.start_vm(
+                vm_name=arguments.get("vm_name", config.VM_NAME),
+                gui=bool(arguments.get("gui", config.START_GUI)),
+            )
 
     elif name == "stop_vm":
-        result = vbox.stop_vm(arguments.get("vm_name", config.VM_NAME))
+        if config.HYPERVISOR == "qemu":
+            result = qemu.stop_vm()
+        else:
+            result = vbox.stop_vm(arguments.get("vm_name", config.VM_NAME))
 
     elif name == "reset_vm":
-        result = vbox.reset_vm(arguments.get("vm_name", config.VM_NAME))
+        if config.HYPERVISOR == "qemu":
+            result = qemu.reset_vm(
+                image_path=arguments.get("image_path", config.FLOPPY_IMAGE),
+                gdb_host=arguments.get("gdb_host", config.GDB_HOST),
+                gdb_port=int(arguments.get("gdb_port", config.GDB_PORT)),
+                halt_on_start=bool(arguments.get("halt_on_start", True)),
+                display=arguments.get("display", config.QEMU_DISPLAY),
+            )
+        else:
+            result = vbox.reset_vm(arguments.get("vm_name", config.VM_NAME))
 
     elif name == "pause_vm":
-        result = vbox.pause_vm(arguments.get("vm_name", config.VM_NAME))
+        if config.HYPERVISOR == "qemu":
+            result = {
+                "ok": False,
+                "error": "unsupported_by_hypervisor",
+                "message": (
+                    "QEMU does not support pause_vm via this interface. "
+                    "Use interrupt_execution to halt via GDB."
+                ),
+            }
+        else:
+            result = vbox.pause_vm(arguments.get("vm_name", config.VM_NAME))
 
     elif name == "resume_vm":
-        result = vbox.resume_vm(arguments.get("vm_name", config.VM_NAME))
+        if config.HYPERVISOR == "qemu":
+            result = {
+                "ok": False,
+                "error": "unsupported_by_hypervisor",
+                "message": (
+                    "QEMU does not support resume_vm via this interface. "
+                    "Use continue_execution to resume via GDB."
+                ),
+            }
+        else:
+            result = vbox.resume_vm(arguments.get("vm_name", config.VM_NAME))
 
     # -- GDB connection --
     elif name == "connect_gdb":
@@ -473,10 +582,12 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
     elif name == "get_debug_backend":
         result = {
             "ok": _debug_backend != "unavailable",
+            "hypervisor": config.HYPERVISOR,
             "backend": _debug_backend,
             "configured": config.DEBUG_BACKEND,
             "strict_mode": config.DEBUG_BACKEND in ("gdb", "native"),
             "gdb_binary": _gdb_binary,
+            "qemu_binary": config.QEMU_BINARY,
             "error": _backend_init_error,
         }
 
