@@ -370,13 +370,12 @@ keyboard:
 	push	bx
 	push	dx
 	push	si
-	mov	dx, 0x1e
 	in	al, 0x60		; read info from keyboard
 	mov	bl, al
-	xor	ah, ah
+	xor	ah, ah			; ax = 0x00:scancode (16-bit value for ring_buffer_insert)
 	push	ax
 	call 	ring_buffer_insert
-	pop	dx
+	pop	ax			; restore ax (discard argument, matching push ax above)
 	cmp	bl, 0x1e		; 'A'
 	je	.a
 	cmp	bl, 0x39		; 'space'
