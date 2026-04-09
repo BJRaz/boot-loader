@@ -9,7 +9,7 @@ OBJS=$(addprefix $(OBJDIR)/, boot.bin boot2.bin)
 # VirtualBox VM name
 VM_NAME=boot-loader
 
-.PHONY: all clean run run-vbox
+.PHONY: all clean run run-vbox help
 
 all: $(BOOT_IMAGE)
 
@@ -47,5 +47,11 @@ run-vbox: $(BOOT_IMAGE)
 clean:
 	rm -rf $(BOOT_IMAGE) $(BINDIR)
 
-
+help:
+	@echo "Targets:"
+	@echo "  all        Build floppy.img (default)"
+	@echo "  run        Launch in QEMU (qemu-system-i386)"
+	@echo "  run-vbox   Attach floppy to VirtualBox VM '$(VM_NAME)' and start with GDB on localhost:5037"
+	@echo "  clean      Remove build artifacts and floppy.img"
+	@echo "  help       Show this help"
 
