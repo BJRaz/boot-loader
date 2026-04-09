@@ -324,10 +324,10 @@ keyboard:
 	mov	dx, 0x1e
 	in	al, 0x60		; read info from keyboard
 	mov	bl, al
-	push	dx	
+	xor	ah, ah
+	push	ax
 	call 	ring_buffer_insert
 	pop	dx
-	jmp	.out
 	cmp	bl, 0x1e		; 'A'
 	je	.a
 	cmp	bl, 0x39		; 'space'
