@@ -1,3 +1,0 @@
-char	boot.asm	/^	mov	al,0x20		; write char (0x20 = space)$/
-rutine	interrupt.asm	/^; test interrupt rutine (0x80)$/
-x1c	boot2.asm	/^	;mov	[es:(0x1c<<2)+2], cs	; interrupt vector inde/
