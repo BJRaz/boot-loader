@@ -363,7 +363,7 @@ timer:
 	cmp	al, 0
 	je	.end
 	push	si
-	push	hest			; print key indicator if scancode is pending
+	push	msg_rb_key		; print key indicator if scancode is pending
 	call	println
 	pop	cx
 	pop	si
@@ -453,7 +453,7 @@ keydefault:		db 	"Another key pressed", 13, 10, 0
 buffer:			times	128 db 0	; string buffer
 
 ; Debug string for ring buffer activity (NUL-terminated)
-hest:			db	"Key in buffer",13,10,0
+msg_rb_key:		db	"Key in buffer",13,10,0
 
 ; Ring buffer storage - placed after all string literals to prevent
 ; write-through corruption of adjacent NUL terminators.
