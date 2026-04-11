@@ -18,6 +18,9 @@ INT_KEYBOARD	equ 0x09	; Keyboard interrupt vector (IRQ 1)
 INT_CUSTOM	equ 0x80	; Custom interrupt vector
 INT_TIMER	equ 0x1c	; System timer tick interrupt vector
 
+; **********************
+; IO ports constants
+; **********************
 %define	PIC_EOI		0x20
 %define PIC1_COMMAND	0x20
 %define PIC2_COMMAND	0xa0
