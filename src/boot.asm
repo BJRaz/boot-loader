@@ -1,49 +1,49 @@
-org	0x7c00			; address labels originates from here .. this is an offset, and CS is 0 at boottime
+org	0x7c00									; address labels originates from here .. this is an offset, and CS is 0 at boottime
 bits 	16
-
+										
 ; **********************
 ; Constants
 ; **********************
-BOOT2_ADDR	equ 0x8000		; boot2 stage load address
-STACK_TOP	equ 0x7c00 - 1		; stack grows downward from boot code
-VIDEO_MODE	equ 0x03		; 80x25 text mode
-CURSOR_START	equ 0x00		; cursor start scanline
-CURSOR_END	equ 0x07		; cursor end scanline
-VRAM_ATTR	equ 0x17		; background blue, foreground light gray (0001 0111b)
-SCREEN_SIZE	equ 0x1000		; number of iterations for screen clear
-SPACE_CHAR	equ 0x20		; space character
+BOOT2_ADDR	equ 0x8000						; boot2 stage load address
+STACK_TOP	equ 0x7c00 - 1					; stack grows downward from boot code
+VIDEO_MODE	equ 0x03						; 80x25 text mode
+CURSOR_START	equ 0x00					; cursor start scanline
+CURSOR_END	equ 0x07						; cursor end scanline
+VRAM_ATTR	equ 0x17						; background blue, foreground light gray (0001 0111b)
+SCREEN_SIZE	equ 0x1000						; number of iterations for screen clear
+SPACE_CHAR	equ 0x20						; space character
 
 ; Disk operation constants
 SECTORS_TO_READ	equ 4
 CYLINDER		equ 0
-SECTOR			equ 2			; sector 2 (boot sector is 1)
+SECTOR			equ 2						; sector 2 (boot sector is 1)
 HEAD			equ 0
 DRIVE			equ 0
 
 
 ; BIOS services:
-BIOS_VIDEO_SERVICE	equ	0x10	;
-BIOS_DISK_SERVICE	equ	0x13	;
+BIOS_VIDEO_SERVICE	equ	0x10					; BIOS video services
+BIOS_DISK_SERVICE	equ	0x13					; BIOS disk services
 
 section .text
 
 
 ; start
 start:
-	;int	0x03		; debug
-	cli			; clear interrupt flag
-	cld			; clear DF flag for auto-increment SI in string operations
+	;int	0x03							; debug
+	cli										; clear interrupt flag
+	cld										; clear DF flag for auto-increment SI in string operations
 
-	xor	ax, ax		; clear AX to set segment registers to 0
-	mov	ds, ax		; clear segment registers
-	mov	ss, ax		
-	mov	es, ax
-	mov	fs, ax
-	mov	gs, ax
+	xor	ax, ax								; clear AX to set segment registers to 0
+	mov	ds, ax								; clear segment registers
+	mov	ss, ax				
+	mov	es, ax		
+	mov	fs, ax		
+	mov	gs, ax		
 
-	mov	sp, STACK_TOP	; setup stack, stack grows downward, 
-						; TODO: theres no fixed size, just need to ensure it doesn't overlap with code or data	
-	mov	bp, sp			; set base pointer for stack frame (optional, but good practice)		
+	mov	sp, STACK_TOP						; setup stack, stack grows downward,
+											; TODO: theres no fixed size, just need to ensure it doesn't overlap with code or data
+	mov	bp, sp								; set base pointer for stack frame (optional, but good practice)
 
 	; Debug: Print bootloader initialized message
 	mov	si, msg_boot_start
@@ -51,36 +51,36 @@ start:
 ; **********************
 ;	SET VIDEO MODE
 ; **********************
-	mov	ah, 0			; SET VIDEO MODE
-	mov	al, VIDEO_MODE		; 80x25 text mode
-	int	BIOS_VIDEO_SERVICE			; set video mode
+	mov	ah, 0								; SET VIDEO MODE
+	mov	al, VIDEO_MODE						; 80x25 text mode
+	int	BIOS_VIDEO_SERVICE					; set video mode
 
 	; Debug: Print video mode set
 	mov	si, msg_video_set
 	call	print
 
-	mov	ch, CURSOR_START	; show box shaped cursor
+	mov	ch, CURSOR_START					; show box shaped cursor
 	mov	cl, CURSOR_END
 	mov	ah, 1
-	int	BIOS_VIDEO_SERVICE	; interrupt 10h - video services
+	int	BIOS_VIDEO_SERVICE					; interrupt 10h - video services
 
 	; Debug: Print cursor set
 	mov	si, msg_cursor_set
 	call	print
 
-				; CLEAR SCREEN using BIOS
-	mov	ah, 0x9		; write char and attribute 
-	mov	cx, SCREEN_SIZE	; how many times 
-	mov	al, SPACE_CHAR	; write space character
-	mov	bl, VRAM_ATTR	; background blue, foreground light gray
-	int	BIOS_VIDEO_SERVICE			; interrupt 10h - video services
+	; CLEAR SCREEN using BIOS
+	mov	ah, 0x9								; write char and attribute
+	mov	cx, SCREEN_SIZE						; how many times
+	mov	al, SPACE_CHAR						; write space character
+	mov	bl, VRAM_ATTR						; background blue, foreground light gray
+	int	BIOS_VIDEO_SERVICE					; interrupt 10h - video services
 	
-				; http://staff.ustc.edu.cn/~xyfeng/research/cos/resources/BIOS/Resources/assembly/int1c.html
-	sti			; set interrupt flag
+											; http://staff.ustc.edu.cn/~xyfeng/research/cos/resources/BIOS/Resources/assembly/int1c.html
+	sti										; set interrupt flag
 
 	call	diskops
 
-	jmp	BOOT2_ADDR		; jump to boot2 stage
+	jmp	BOOT2_ADDR							; jump to boot2 stage
 
 ; DISK OPERATIONS:
 ; read from floppy
@@ -99,7 +99,7 @@ start:
 ;	al			no of sectors transferred
 ;	note:			each sector = 512 bytes
 diskops:
-	mov	ah, 0		; reset drive
+	mov	ah, 0						; reset drive
 	mov	dl, DRIVE
 	int	BIOS_DISK_SERVICE
 
@@ -108,15 +108,15 @@ diskops:
 	call	print
 
 .readdisk:
-	mov	ah, 0x02		; read sector function
-	mov	al, SECTORS_TO_READ
-	mov	ch, CYLINDER	; cylinder/track number
-	mov	cl, SECTOR	; sector number (2 - boot sector is 1)
-	mov	dh, HEAD	; head/side number
-	mov	dl, DRIVE	; drive number
-	xor	bx, bx
-	mov	es, bx		; set es = 0
-	mov	bx, [databuffer]; set bx = address (ES:BX = 0:offset)
+	mov	ah, 0x02							; read sector function
+	mov	al, SECTORS_TO_READ			
+	mov	ch, CYLINDER						; cylinder/track number
+	mov	cl, SECTOR							; sector number (2 - boot sector is 1)
+	mov	dh, HEAD							; head/side number
+	mov	dl, DRIVE							; drive number
+	xor	bx, bx			
+	mov	es, bx								; set es = 0
+	mov	bx, [databuffer]					; set bx = address (ES:BX = 0:offset)
 	int 	BIOS_DISK_SERVICE	
 
 	test	ah, ah
