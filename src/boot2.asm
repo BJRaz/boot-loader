@@ -105,13 +105,16 @@ process1:
 	push [procedure]
 	push hest
 	call printf 		; print -> calls BIOS int 0x10.
-	; jmp	process1	; this will cause process1 to print 'H' repeatedly, never returning to main loop to allow process2 to run. We will fix this in the next stage by implementing a simple scheduler that switches between processes on timer interrupts.
+	;jmp	process1	; this will cause process1 to print 'H' repeatedly, never returning to main loop to allow process2 to run. We will fix this in the next stage by implementing a simple scheduler that switches between processes on timer interrupts.
 	; some how exit this process and return to main loop, which will then jump to process2
+	inc byte [procedure]		; increment procedure to show progress in the printed message
 	jmp halt
 process2:
-	mov	si, fest
-	call	print
-	; jmp	process2	; this will cause process2 to print 'F' repeatedly, never returning to main loop to allow process1 to run again. We will fix this in the next stage by implementing a simple scheduler that switches between processes on timer interrupts.
+	push [procedure]
+	push fest
+	call printf 		; print -> calls BIOS int 0x10.
+	;jmp	process2	; this will cause process2 to print 'F' repeatedly, never returning to main loop to allow process1 to run again. We will fix this in the next stage by implementing a simple scheduler that switches between processes on timer interrupts.
+	inc byte [procedure]		; increment procedure to show progress in the printed message
 	jmp halt
 
 ; --------------------------------
@@ -511,8 +514,8 @@ sched:			db	"Change task interrupt",13,10,0
 timermsg:		db	"Timer interrupt",13,10,0
 keyb:			db	"Some key pressed",13,10,0
 keydefault:		db 	"Another key pressed", 13, 10, 0
-hest:			db	"H 0x%x",0
-fest:			db	"F",0
+hest:			db	"H %d\n",0
+fest:			db	"F 0x%x\n",0
 buffer:			times	128 db 0	; string buffer
 
 ; Debug string for ring buffer activity (NUL-terminated)

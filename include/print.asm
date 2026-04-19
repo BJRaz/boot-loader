@@ -52,8 +52,32 @@ printf:
 	jz      .done
 
 	cmp     al, '%'
+	je      .format_spec
+	cmp     al, 0x5C        ; backslash
 	jne     .print_char
 
+	; Handle escape sequence
+	lodsb                   ; AL = next char after backslash
+	cmp     al, 'n'
+	je      .print_newline
+	; Unknown escape, print backslash + char
+	push    ax
+	mov     ah, 0x0e
+	mov     al, 0x5C        ; backslash
+	int     0x10
+	pop     ax
+	jmp     .print_char
+
+.print_newline:
+	mov     ah, 0x0e
+	mov     al, 13
+	int     0x10
+	mov     ah, 0x0e
+	mov     al, 10
+	int     0x10
+	jmp     .next_char
+
+.format_spec:
 	; Handle format specifier
 	lodsb                   ; AL = next char
 	cmp     al, 's'
@@ -62,6 +86,8 @@ printf:
 	je      .print_char_arg
 	cmp     al, 'x'
 	je      .print_hex
+	cmp     al, 'd'
+	je      .print_dec
 
 	; Unknown specifier, just print as is
 	mov     ah, 0x0e
@@ -104,6 +130,30 @@ printf:
 	int     0x10
 	pop     ax              ; restore rotated value (AH intact)
 	loop    .print_hex_loop
+	pop     si
+	jmp     .next_char
+
+.print_dec:
+	mov     ax, [di]        ; get word argument
+	add     di, 2
+	push    si
+	; Convert unsigned 16-bit AX to decimal digits on stack
+	xor     cx, cx          ; digit count = 0
+	mov     bx, 10
+.dec_divide:
+	xor     dx, dx
+	div     bx              ; AX = quotient, DX = remainder
+	push    dx              ; push digit (0-9)
+	inc     cx
+	test    ax, ax
+	jnz     .dec_divide
+	; Print digits from stack (most significant first)
+.dec_print:
+	pop     ax              ; digit value in AL
+	add     al, '0'
+	mov     ah, 0x0e
+	int     0x10
+	loop    .dec_print
 	pop     si
 	jmp     .next_char
 
