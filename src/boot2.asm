@@ -1,81 +1,13 @@
 org	0x8000			; address labels originates from here .. this is an offset, and CS is 0 at boottime
 bits 	16
 
-; **********************
-; Macros
-; **********************
-%macro setup_interrupt 2
-	mov	ax, %1
-	mov	word [es:%2<<2], ax		; set offset
-	mov	[es:(%2<<2)+2], cs		; set segment
-%endmacro
-
-; **********************
-; Constants
-; **********************
-INT_DIVZERO		equ 0x00	; Division by zero interrupt vector (CPU fault 0)
-INT_DEBUG		equ 0x01	; Debug exception vector 			(CPU trap/fault 1)
-INT_NMI			equ 0x02	; Non-maskable interrupt vector 	(CPU NMI 2)
-INT_BREAKPOINT	equ 0x03	; Breakpoint interrupt vector 		(CPU trap 3)
-INT_OVERFLOW	equ 0x04	; Overflow interrupt vector 		(CPU trap 4)
-INT_BOUND		equ 0x05	; BOUND range exceeded interrupt vector 	(CPU fault 5)
-INT_INVALIDOP	equ 0x06	; Invalid opcode interrupt vector 	(CPU fault 6)
-INT_DEVICE_NOT_AVAILABLE	equ 0x07	; Device not available interrupt vector (CPU fault 7)
-INT_INTERVAL_TIMER	equ 0x08	; System timer tick interrupt vector (IRQ 0)
-INT_KEYBOARD	equ 0x09	; Keyboard interrupt vector 		(IRQ 1)	
-INT_CASCADE	equ 0x0a	; Cascade interrupt vector (used internally by PICs) (IRQ 2)
-INT_COM2		equ 0x0b	; COM2 interrupt vector (IRQ 3)
-INT_COM1		equ 0x0c	; COM1 interrupt vector (IRQ 4)
-INT_LPT2		equ 0x0d	; LPT2 interrupt vector (IRQ 5)
-INT_FLOPPY		equ 0x0e	; Floppy disk interrupt vector (IRQ 6)
-INT_LPT1		equ 0x0f	; LPT1 interrupt vector (IRQ 7)
-INT_CMOS		equ 0x70	; CMOS RTC interrupt vector (IRQ 8)
-INT_FREE1		equ 0x71	; Free for peripherals (IRQ 9)
-INT_FREE2		equ 0x72	; Free for peripherals (IRQ 10)
-INT_FREE3		equ 0x73	; Free for peripherals (IRQ 11)
-INT_MOUSE		equ 0x74	; PS/2 mouse interrupt vector (IRQ 12)
-INT_FPU			equ 0x75	; FPU interrupt	vector (IRQ 13)
-INT_PRIMARY_ATA	equ 0x76	; Primary ATA hard disk interrupt vector (IRQ 14)
-INT_SECONDARY_ATA	equ 0x77	; Secondary ATA hard disk interrupt vector (IRQ 15)
-INT_TIMER		equ 0x1c	; System timer tick interrupt vector (BIOS handler for IRQ 0)
-INT_CUSTOM		equ 0x80	; Custom interrupt vector
-
-; **********************
-; IO ports constants
-; **********************
-%define	PIC_EOI		0x20
-%define PIC1_COMMAND	0x20
-%define PIC2_COMMAND	0xa0
-%define PIC1_DATA	0x21
-%define PIC2_DATA	0xa1
+%include "constants.asm"
+%include "interrupts.asm"
+%include "pic.asm"
+%include "pcb.asm"
 
 ; Ring buffer capacity (number of byte entries)
 RB_SIZE		equ	50
-
-; **********************
-; Process Control Block layout (manual struct)
-; **********************
-PCB_STATE	equ	0	; byte: 0=unused, 1=ready, 2=running
-PCB_IP		equ	1	; word: saved IP
-PCB_CS		equ	3	; word: saved CS
-PCB_FLAGS	equ	5	; word: saved FLAGS
-PCB_SP		equ	7	; word: saved SP
-PCB_SS		equ	9	; word: saved SS
-PCB_AX		equ	11	; word: saved AX
-PCB_BX		equ	13	; word: saved BX
-PCB_CX		equ	15	; word: saved CX
-PCB_DX		equ	17	; word: saved DX
-PCB_SI		equ	19	; word: saved SI
-PCB_DI		equ	21	; word: saved DI
-PCB_BP		equ	23	; word: saved BP
-PCB_DS		equ	25	; word: saved DS
-PCB_ES		equ	27	; word: saved ES
-PCB_SIZE	equ	29	; total bytes per entry
-NUM_PROCS	equ	2
-
-; Per-process stack areas (256 bytes each, placed below main stack)
-PROC0_STACK_TOP	equ	0x7800	; process 0 stack: 0x7700-0x7800
-PROC1_STACK_TOP	equ	0x7600	; process 1 stack: 0x7500-0x7600
 
 section .text
 	cli				; disable interrupts during setup
@@ -187,26 +119,6 @@ process2:
 ;
 ;	Strategy: push ALL registers immediately so nothing is lost,
 ;	then save from known stack positions into the current PCB.
-;
-;	Stack after all pushes (offsets from SP):
-;	  +0  ES  +2  DS  +4  BP  +6  DI  +8  SI
-;	  +10 DX  +12 CX  +14 BX  +16 AX
-;	  +18 IP  +20 CS  +22 FLAGS   (iret frame)
-; --------------------------------
-STK_ES		equ	0
-STK_DS		equ	2
-STK_BP		equ	4
-STK_DI		equ	6
-STK_SI		equ	8
-STK_DX		equ	10
-STK_CX		equ	12
-STK_BX		equ	14
-STK_AX		equ	16
-STK_IP		equ	18
-STK_CS		equ	20
-STK_FLAGS	equ	22
-STK_FRAME	equ	24		; total bytes pushed (9 regs + 3 iret)
-
 timer:
 	; ---- Save every register ----
 	push	ax

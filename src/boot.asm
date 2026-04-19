@@ -1,29 +1,14 @@
 org	0x7c00									; address labels originates from here .. this is an offset, and CS is 0 at boottime
 bits 	16
 										
-; **********************
-; Constants
-; **********************
-BOOT2_ADDR	equ 0x8000						; boot2 stage load address
-STACK_TOP	equ 0x7c00 - 1					; stack grows downward from boot code
-VIDEO_MODE	equ 0x03						; 80x25 text mode
-CURSOR_START	equ 0x00					; cursor start scanline
-CURSOR_END	equ 0x07						; cursor end scanline
-VRAM_ATTR	equ 0x17						; background blue, foreground light gray (0001 0111b)
-SCREEN_SIZE	equ 0x1000						; number of iterations for screen clear
-SPACE_CHAR	equ 0x20						; space character
+%include "constants.asm"
 
-; Disk operation constants
+; Disk operation constants (stage-1 only)
 SECTORS_TO_READ	equ 4
 CYLINDER		equ 0
 SECTOR			equ 2						; sector 2 (boot sector is 1)
 HEAD			equ 0
 DRIVE			equ 0
-
-
-; BIOS services:
-BIOS_VIDEO_SERVICE	equ	0x10					; BIOS video services
-BIOS_DISK_SERVICE	equ	0x13					; BIOS disk services
 
 section .text
 
