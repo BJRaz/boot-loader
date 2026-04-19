@@ -14,7 +14,7 @@ SCREEN_SIZE	equ 0x1000		; number of iterations for screen clear
 SPACE_CHAR	equ 0x20		; space character
 
 ; Disk operation constants
-SECTORS_TO_READ	equ 3
+SECTORS_TO_READ	equ 4
 CYLINDER		equ 0
 SECTOR			equ 2			; sector 2 (boot sector is 1)
 HEAD			equ 0

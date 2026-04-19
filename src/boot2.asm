@@ -52,6 +52,31 @@ INT_CUSTOM		equ 0x80	; Custom interrupt vector
 ; Ring buffer capacity (number of byte entries)
 RB_SIZE		equ	50
 
+; **********************
+; Process Control Block layout (manual struct)
+; **********************
+PCB_STATE	equ	0	; byte: 0=unused, 1=ready, 2=running
+PCB_IP		equ	1	; word: saved IP
+PCB_CS		equ	3	; word: saved CS
+PCB_FLAGS	equ	5	; word: saved FLAGS
+PCB_SP		equ	7	; word: saved SP
+PCB_SS		equ	9	; word: saved SS
+PCB_AX		equ	11	; word: saved AX
+PCB_BX		equ	13	; word: saved BX
+PCB_CX		equ	15	; word: saved CX
+PCB_DX		equ	17	; word: saved DX
+PCB_SI		equ	19	; word: saved SI
+PCB_DI		equ	21	; word: saved DI
+PCB_BP		equ	23	; word: saved BP
+PCB_DS		equ	25	; word: saved DS
+PCB_ES		equ	27	; word: saved ES
+PCB_SIZE	equ	29	; total bytes per entry
+NUM_PROCS	equ	2
+
+; Per-process stack areas (256 bytes each, placed below main stack)
+PROC0_STACK_TOP	equ	0x7800	; process 0 stack: 0x7700-0x7800
+PROC1_STACK_TOP	equ	0x7600	; process 1 stack: 0x7500-0x7600
+
 section .text
 	cli				; disable interrupts during setup
 	; Explicitly set es=0 for safe IVT access
@@ -84,96 +109,257 @@ misc:
 	call	print
 	call	ring_buffer_init
 
-;	call	enterstring
-mainloop:
-	; jmp 	[process_control_table+16]	; jump to IP of first PCB (PID 0, unused)
-	;push	done
-	;call	println
-	;jmp	mainloop
-	;call	halt
+	; Initialize process table
+	call	pcb_init
+
 halt:
-	
 .idle:
+	hlt			; low-power idle; timer IRQ wakes us
 	jmp	halt
 
-processtable:
-	times 8 dw 0		; space for 8 process control blocks (16 bytes each)
+; **********************
+; pcb_init: set up PCB entries for process 0 and process 1
+; **********************
+pcb_init:
+	; Process 0: process1 entry point
+	mov	si, proc_table
+	mov	byte  [si + PCB_STATE], 1	; ready
+	mov	word  [si + PCB_IP],    process1
+	mov	word  [si + PCB_CS],    0x0000
+	mov	word  [si + PCB_FLAGS], 0x0202	; IF set
+	mov	word  [si + PCB_SP],    PROC0_STACK_TOP
+	mov	word  [si + PCB_SS],    0x0000
+	mov	word  [si + PCB_AX],    0
+	mov	word  [si + PCB_BX],    0
+	mov	word  [si + PCB_CX],    0
+	mov	word  [si + PCB_DX],    0
+	mov	word  [si + PCB_SI],    0
+	mov	word  [si + PCB_DI],    0
+	mov	word  [si + PCB_BP],    PROC0_STACK_TOP
+	mov	word  [si + PCB_DS],    0x0000
+	mov	word  [si + PCB_ES],    0x0000
 
+	; Process 1: process2 entry point
+	add	si, PCB_SIZE
+	mov	byte  [si + PCB_STATE], 1	; ready
+	mov	word  [si + PCB_IP],    process2
+	mov	word  [si + PCB_CS],    0x0000
+	mov	word  [si + PCB_FLAGS], 0x0202	; IF set
+	mov	word  [si + PCB_SP],    PROC1_STACK_TOP
+	mov	word  [si + PCB_SS],    0x0000
+	mov	word  [si + PCB_AX],    0
+	mov	word  [si + PCB_BX],    0
+	mov	word  [si + PCB_CX],    0
+	mov	word  [si + PCB_DX],    0
+	mov	word  [si + PCB_SI],    0
+	mov	word  [si + PCB_DI],    0
+	mov	word  [si + PCB_BP],    PROC1_STACK_TOP
+	mov	word  [si + PCB_DS],    0x0000
+	mov	word  [si + PCB_ES],    0x0000
+
+	; 0xFF = sentinel: no process running yet, first switch loads process 0
+	mov	byte [current_process], 0xFF
+	ret
+
+; **********************
 ; PROCESSES
-; TEMP solution: For simplicity we just have two processes that print different characters in an infinite loop.
+; Each process prints once per time-slice, then idles.
+; The timer ISR context-switches during hlt, never mid-BIOS-call.
+; **********************
 process1:
-	push [procedure]
-	push hest
-	call printf 		; print -> calls BIOS int 0x10.
-	;jmp	process1	; this will cause process1 to print 'H' repeatedly, never returning to main loop to allow process2 to run. We will fix this in the next stage by implementing a simple scheduler that switches between processes on timer interrupts.
-	; some how exit this process and return to main loop, which will then jump to process2
-	inc byte [procedure]		; increment procedure to show progress in the printed message
-	jmp halt
+	mov	si, hest
+	call	print
+.idle:
+	hlt
+	jmp	.idle
+
 process2:
-	push [procedure]
-	push fest
-	call printf 		; print -> calls BIOS int 0x10.
-	;jmp	process2	; this will cause process2 to print 'F' repeatedly, never returning to main loop to allow process1 to run again. We will fix this in the next stage by implementing a simple scheduler that switches between processes on timer interrupts.
-	inc byte [procedure]		; increment procedure to show progress in the printed message
-	jmp halt
+	mov	si, fest
+	call	print
+.idle:
+	hlt
+	jmp	.idle
 
 ; --------------------------------
 ;	Timer handler (INT 0x08 — IRQ 0, hooked directly)
-;	We replace the BIOS INT 0x08 handler entirely.
-;	We must send EOI to PIC1 ourselves before iret.
 ;
-;	Stack frame on entry (16-bit real mode, iret frame pushed by CPU):
-;	  [SP+0] = IP   (interrupted code)
-;	  [SP+2] = CS   (interrupted code)
-;	  [SP+4] = FLAGS (interrupted code)
+;	On entry the CPU pushed:  [SP]=IP  [SP+2]=CS  [SP+4]=FLAGS
 ;
-;	To task-switch we rewrite IP/CS in the iret frame so that
-;	iret resumes at the target process entry point.
+;	Strategy: push ALL registers immediately so nothing is lost,
+;	then save from known stack positions into the current PCB.
+;
+;	Stack after all pushes (offsets from SP):
+;	  +0  ES  +2  DS  +4  BP  +6  DI  +8  SI
+;	  +10 DX  +12 CX  +14 BX  +16 AX
+;	  +18 IP  +20 CS  +22 FLAGS   (iret frame)
+; --------------------------------
+STK_ES		equ	0
+STK_DS		equ	2
+STK_BP		equ	4
+STK_DI		equ	6
+STK_SI		equ	8
+STK_DX		equ	10
+STK_CX		equ	12
+STK_BX		equ	14
+STK_AX		equ	16
+STK_IP		equ	18
+STK_CS		equ	20
+STK_FLAGS	equ	22
+STK_FRAME	equ	24		; total bytes pushed (9 regs + 3 iret)
+
 timer:
-	push	bp
-	mov	bp, sp			; bp+2=IP, bp+4=CS, bp+6=FLAGS (iret frame)
+	; ---- Save every register ----
 	push	ax
 	push	bx
+	push	cx
 	push	dx
+	push	si
+	push	di
+	push	bp
 	push	ds
-	xor	ax, ax
-	mov	ds, ax			; ds=0: labels are absolute from org 0x8000
+	push	es
 
+	; DS = 0 so we can access our data labels
+	xor	ax, ax
+	mov	ds, ax
+
+	; ---- Tick counter ----
 	mov	bx, word [ticks]
 	inc	bx
+	mov	word [ticks], bx
 	mov	ax, bx
 	xor	dx, dx
 	div	word [divisor]		; dx = ticks mod 18
 	test	dx, dx
-	jnz	.end
+	jnz	.no_switch
 
-	; ~1 second elapsed: switch task by rewriting the iret frame
-	; Toggle current_process between 0 and 1
+	; =====================================================
+	; Context switch
+	; =====================================================
+	mov	bp, sp			; BP = base of our saved-register frame
+
+	; Check if this is the first switch (sentinel 0xFF = idle, no save)
+	cmp	byte [current_process], 0xFF
+	je	.first_switch
+
+	; ---- Compute pointer to current PCB in SI ----
+	xor	ah, ah
+	mov	al, byte [current_process]
+	mov	bl, PCB_SIZE
+	mul	bl			; AX = index * PCB_SIZE  (DX safe: 8-bit mul)
+	add	ax, proc_table
+	mov	si, ax
+
+	; ---- Save interrupted context from stack into current PCB ----
+	mov	ax, [bp + STK_AX]
+	mov	word [si + PCB_AX], ax
+	mov	ax, [bp + STK_BX]
+	mov	word [si + PCB_BX], ax
+	mov	ax, [bp + STK_CX]
+	mov	word [si + PCB_CX], ax
+	mov	ax, [bp + STK_DX]
+	mov	word [si + PCB_DX], ax
+	mov	ax, [bp + STK_SI]
+	mov	word [si + PCB_SI], ax
+	mov	ax, [bp + STK_DI]
+	mov	word [si + PCB_DI], ax
+	mov	ax, [bp + STK_BP]
+	mov	word [si + PCB_BP], ax
+	mov	ax, [bp + STK_DS]
+	mov	word [si + PCB_DS], ax
+	mov	ax, [bp + STK_ES]
+	mov	word [si + PCB_ES], ax
+
+	; Save iret frame
+	mov	ax, [bp + STK_IP]
+	mov	word [si + PCB_IP], ax
+	mov	ax, [bp + STK_CS]
+	mov	word [si + PCB_CS], ax
+	mov	ax, [bp + STK_FLAGS]
+	mov	word [si + PCB_FLAGS], ax
+
+	; Save interrupted SP: original SP before CPU pushed iret frame
+	mov	ax, bp
+	add	ax, STK_FRAME		; skip our 9 pushes + 3 iret words
+	mov	word [si + PCB_SP], ax
+	mov	ax, ss
+	mov	word [si + PCB_SS], ax
+
+	mov	byte [si + PCB_STATE], 1	; mark old process as ready
+
+	; ---- Select next process (round-robin) ----
 	mov	al, byte [current_process]
 	xor	al, 1
 	mov	byte [current_process], al
+	jmp	.load_process
 
-	; Set IP in iret frame to the target process entry point
-	test	al, al
-	jz	.set_p2
-	mov	word [bp+2], process1	; IP = process1
-	jmp	.set_cs
-.set_p2:
-	mov	word [bp+2], process2	; IP = process2
-.set_cs:
-	mov	word [bp+4], 0x0000	; CS = 0 (matches org 0x8000 flat layout)
-	; FLAGS at [bp+6] preserved from interrupted context (includes IF)
+.first_switch:
+	; First switch from idle: load process 0, don't save idle context
+	mov	byte [current_process], 0
+	mov	al, 0
 
-.end:
-	mov	word [ticks], bx
-	; Send EOI to master PIC (required — we hooked INT 0x08 directly)
+.load_process:
+	; ---- Compute pointer to next PCB in SI ----
+	xor	ah, ah
+	mov	bl, PCB_SIZE
+	mul	bl
+	add	ax, proc_table
+	mov	si, ax
+
+	mov	byte [si + PCB_STATE], 2	; mark new process as running
+
+	; ---- Switch to new process's stack ----
+	; Set SS:SP to the saved values, then push an iret frame + regs
+	mov	ax, [si + PCB_SS]
+	mov	ss, ax
+	mov	sp, [si + PCB_SP]
+
+	; Build iret frame on new stack
+	push	word [si + PCB_FLAGS]
+	push	word [si + PCB_CS]
+	push	word [si + PCB_IP]
+
+	; Build register frame on new stack (same order as our pushes)
+	push	word [si + PCB_AX]
+	push	word [si + PCB_BX]
+	push	word [si + PCB_CX]
+	push	word [si + PCB_DX]
+	; SI must be pushed before we lose the PCB pointer
+	push	word [si + PCB_SI]
+	push	word [si + PCB_DI]
+	push	word [si + PCB_BP]
+	push	word [si + PCB_DS]
+	push	word [si + PCB_ES]
+
+	; ---- Send EOI before restoring regs ----
 	mov	al, PIC_EOI
 	out	PIC1_COMMAND, al
+
+	; ---- Restore all registers and iret ----
+	pop	es
 	pop	ds
+	pop	bp
+	pop	di
+	pop	si
 	pop	dx
+	pop	cx
 	pop	bx
 	pop	ax
+	iret
+
+.no_switch:
+	; No context switch — just send EOI and return
+	mov	al, PIC_EOI
+	out	PIC1_COMMAND, al
+	pop	es
+	pop	ds
 	pop	bp
+	pop	di
+	pop	si
+	pop	dx
+	pop	cx
+	pop	bx
+	pop	ax
 	iret
 
 
@@ -484,7 +670,7 @@ crs:
 
 section .data
 
-process_control_table: dw 0x500 	;times 8 dw 0		; space for 8 process control blocks (16 bytes each)	
+; (process_control_table removed - replaced by proc_table with PCB layout)
 
 ;	ascii codes:
 ;	0x0d = CR = 13 (carriage return)
@@ -509,13 +695,16 @@ result:			times 2	db	0
 ticks:			dw	1
 divisor:		dw	0x12	; 18
 sched_flag:		db	0		; set to 1 by timer ISR, polled by main loop
-current_process:	db	0		; 0 = process2 next, 1 = process1 next
+current_process:	db	0		; index of currently running process (0 or 1)
+
+; Process table: NUM_PROCS entries of PCB_SIZE bytes each
+proc_table:		times (NUM_PROCS * PCB_SIZE) db 0
 sched:			db	"Change task interrupt",13,10,0
 timermsg:		db	"Timer interrupt",13,10,0
 keyb:			db	"Some key pressed",13,10,0
 keydefault:		db 	"Another key pressed", 13, 10, 0
-hest:			db	"H %d\n",0
-fest:			db	"F 0x%x\n",0
+hest:			db	"[P1] Hello from process 1",13,10,0
+fest:			db	"[P2] Hello from process 2",13,10,0
 buffer:			times	128 db 0	; string buffer
 
 ; Debug string for ring buffer activity (NUL-terminated)
