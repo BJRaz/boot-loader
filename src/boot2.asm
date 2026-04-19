@@ -163,8 +163,9 @@ pcb_init:
 
 ; **********************
 ; PROCESSES
-; Each process prints once per time-slice, then idles.
-; The timer ISR context-switches during hlt, never mid-BIOS-call.
+; Each process prints once then halts. The timer always resets
+; IP and SP to the entry point when switching in, so the process
+; runs fresh each time-slice (~1 second).
 ; **********************
 process1:
 	mov	si, hest
@@ -178,6 +179,7 @@ process2:
 	call	print
 .idle:
 	hlt
+	jmp	.idle
 	jmp	.idle
 
 ; --------------------------------
@@ -307,6 +309,21 @@ timer:
 	mov	si, ax
 
 	mov	byte [si + PCB_STATE], 2	; mark new process as running
+
+	; Reset IP and SP to entry point so the process starts fresh
+	; Process 0 entry = process1, Process 1 entry = process2
+	mov	al, byte [current_process]
+	test	al, al
+	jnz	.load_p1
+	mov	word [si + PCB_IP], process1
+	mov	word [si + PCB_SP], PROC0_STACK_TOP
+	mov	word [si + PCB_BP], PROC0_STACK_TOP
+	jmp	.do_load
+.load_p1:
+	mov	word [si + PCB_IP], process2
+	mov	word [si + PCB_SP], PROC1_STACK_TOP
+	mov	word [si + PCB_BP], PROC1_STACK_TOP
+.do_load:
 
 	; ---- Switch to new process's stack ----
 	; Set SS:SP to the saved values, then push an iret frame + regs
