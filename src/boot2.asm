@@ -13,10 +13,32 @@ bits 	16
 ; **********************
 ; Constants
 ; **********************
-INT_DIVZERO	equ 0x00	; Division by zero interrupt vector
-INT_KEYBOARD	equ 0x09	; Keyboard interrupt vector (IRQ 1)
-INT_CUSTOM	equ 0x80	; Custom interrupt vector
-INT_TIMER	equ 0x1c	; System timer tick interrupt vector
+INT_DIVZERO		equ 0x00	; Division by zero interrupt vector (CPU fault 0)
+INT_DEBUG		equ 0x01	; Debug exception vector 			(CPU trap/fault 1)
+INT_NMI			equ 0x02	; Non-maskable interrupt vector 	(CPU NMI 2)
+INT_BREAKPOINT	equ 0x03	; Breakpoint interrupt vector 		(CPU trap 3)
+INT_OVERFLOW	equ 0x04	; Overflow interrupt vector 		(CPU trap 4)
+INT_BOUND		equ 0x05	; BOUND range exceeded interrupt vector 	(CPU fault 5)
+INT_INVALIDOP	equ 0x06	; Invalid opcode interrupt vector 	(CPU fault 6)
+INT_DEVICE_NOT_AVAILABLE	equ 0x07	; Device not available interrupt vector (CPU fault 7)
+INT_INTERVAL_TIMER	equ 0x08	; System timer tick interrupt vector (IRQ 0)
+INT_KEYBOARD	equ 0x09	; Keyboard interrupt vector 		(IRQ 1)	
+INT_CASCADE	equ 0x0a	; Cascade interrupt vector (used internally by PICs) (IRQ 2)
+INT_COM2		equ 0x0b	; COM2 interrupt vector (IRQ 3)
+INT_COM1		equ 0x0c	; COM1 interrupt vector (IRQ 4)
+INT_LPT2		equ 0x0d	; LPT2 interrupt vector (IRQ 5)
+INT_FLOPPY		equ 0x0e	; Floppy disk interrupt vector (IRQ 6)
+INT_LPT1		equ 0x0f	; LPT1 interrupt vector (IRQ 7)
+INT_CMOS		equ 0x70	; CMOS RTC interrupt vector (IRQ 8)
+INT_FREE1		equ 0x71	; Free for peripherals (IRQ 9)
+INT_FREE2		equ 0x72	; Free for peripherals (IRQ 10)
+INT_FREE3		equ 0x73	; Free for peripherals (IRQ 11)
+INT_MOUSE		equ 0x74	; PS/2 mouse interrupt vector (IRQ 12)
+INT_FPU			equ 0x75	; FPU interrupt	vector (IRQ 13)
+INT_PRIMARY_ATA	equ 0x76	; Primary ATA hard disk interrupt vector (IRQ 14)
+INT_SECONDARY_ATA	equ 0x77	; Secondary ATA hard disk interrupt vector (IRQ 15)
+INT_TIMER		equ 0x1c	; System timer tick interrupt vector (BIOS handler for IRQ 0)
+INT_CUSTOM		equ 0x80	; Custom interrupt vector
 
 ; **********************
 ; IO ports constants
@@ -31,8 +53,7 @@ INT_TIMER	equ 0x1c	; System timer tick interrupt vector
 RB_SIZE		equ	50
 
 section .text
-	cli			; clear interrupt flag
-
+	cli				; disable interrupts during setup
 	; Explicitly set es=0 for safe IVT access
 	xor	ax, ax
 	mov	es, ax
@@ -40,35 +61,23 @@ section .text
 	; Initialize 8259A PICs before setting up IVT or enabling interrupts
 	call	pic_init
 
-	; Debug: Print stage 2 initialized
-	mov	si, msg_boot2_start
-	call	print
-
 ; *********************
-; IDT setup
+; IVT setup
 ; *********************
-	mov	si, msg_idt_setup
-	call	print
+	; The IVT entry for interrupt N is at physical address N*4:
+	;   [N*4+0..1] = handler offset (IP)
+	;   [N*4+2..3] = handler segment (CS)
+	; ES is already 0 (set above) for flat IVT access.
 
-	setup_interrupt divisionbyzero, INT_DIVZERO
-	setup_interrupt keyboard, INT_KEYBOARD
-	setup_interrupt interrupt, INT_CUSTOM
-	setup_interrupt timer, INT_TIMER
+	setup_interrupt	divisionbyzero,	INT_DIVZERO	; INT 0x00 - Division by zero (CPU fault)
+	setup_interrupt	keyboard,	INT_KEYBOARD	; INT 0x09 - Keyboard (IRQ 1, master PIC)
+	setup_interrupt	timer,		INT_INTERVAL_TIMER	; INT 0x08 - Timer tick (IRQ 0, hooked directly)
+	setup_interrupt	interrupt,	INT_CUSTOM	; INT 0x80 - Custom software interrupt
 
-	mov	si, msg_idt_done
-	call	print
+	sti				; enable interrupts
+	int	0x80			; test: call custom interrupt handler
 
-	int	0x80			; test custom interrupt
-
-	mov	si, done
-	call	print
-; ****************
-; initialize keyboard controller (TODO)
-; ****************
-
-	mov	si, msg_interrupts_enabled
-	call	print
-	sti				; restore interrupts
+	jmp	misc
 
 misc:
 	mov	si, prompt
@@ -77,16 +86,90 @@ misc:
 
 ;	call	enterstring
 mainloop:
+	; jmp 	[process_control_table+16]	; jump to IP of first PCB (PID 0, unused)
 	;push	done
 	;call	println
 	;jmp	mainloop
 	;call	halt
 halt:
-	mov	si, halted
-	;call	print
-	hlt
-	jmp	halt		; loop back to "halt", needed if an exception returns with IRET
-				; points to hlt + 1
+	
+.idle:
+	jmp	halt
+
+; PROCESSES
+; TEMP solution: For simplicity we just have two processes that print different characters in an infinite loop.
+process1:
+	mov	si, hest
+	call	print		; print -> calls BIOS int 0x10.
+	; jmp	process1	; this will cause process1 to print 'H' repeatedly, never returning to main loop to allow process2 to run. We will fix this in the next stage by implementing a simple scheduler that switches between processes on timer interrupts.
+	; some how exit this process and return to main loop, which will then jump to process2
+	jmp halt
+process2:
+	mov	si, fest
+	call	print
+	; jmp	process2	; this will cause process2 to print 'F' repeatedly, never returning to main loop to allow process1 to run again. We will fix this in the next stage by implementing a simple scheduler that switches between processes on timer interrupts.
+	jmp halt
+
+; --------------------------------
+;	Timer handler (INT 0x08 — IRQ 0, hooked directly)
+;	We replace the BIOS INT 0x08 handler entirely.
+;	We must send EOI to PIC1 ourselves before iret.
+;
+;	Stack frame on entry (16-bit real mode, iret frame pushed by CPU):
+;	  [SP+0] = IP   (interrupted code)
+;	  [SP+2] = CS   (interrupted code)
+;	  [SP+4] = FLAGS (interrupted code)
+;
+;	To task-switch we rewrite IP/CS in the iret frame so that
+;	iret resumes at the target process entry point.
+timer:
+	push	bp
+	mov	bp, sp			; bp+2=IP, bp+4=CS, bp+6=FLAGS (iret frame)
+	push	ax
+	push	bx
+	push	dx
+	push	ds
+	xor	ax, ax
+	mov	ds, ax			; ds=0: labels are absolute from org 0x8000
+
+	mov	bx, word [ticks]
+	inc	bx
+	mov	ax, bx
+	xor	dx, dx
+	div	word [divisor]		; dx = ticks mod 18
+	test	dx, dx
+	jnz	.end
+
+	; ~1 second elapsed: switch task by rewriting the iret frame
+	; Toggle current_process between 0 and 1
+	mov	al, byte [current_process]
+	xor	al, 1
+	mov	byte [current_process], al
+
+	; Set IP in iret frame to the target process entry point
+	test	al, al
+	jz	.set_p2
+	mov	word [bp+2], process1	; IP = process1
+	jmp	.set_cs
+.set_p2:
+	mov	word [bp+2], process2	; IP = process2
+.set_cs:
+	mov	word [bp+4], 0x0000	; CS = 0 (matches org 0x8000 flat layout)
+	; FLAGS at [bp+6] preserved from interrupted context (includes IF)
+
+.end:
+	mov	word [ticks], bx
+	; Send EOI to master PIC (required — we hooked INT 0x08 directly)
+	mov	al, PIC_EOI
+	out	PIC1_COMMAND, al
+	pop	ds
+	pop	dx
+	pop	bx
+	pop	ax
+	pop	bp
+	iret
+
+
 
 %include "print.asm"
 
@@ -326,10 +409,12 @@ ring_buffer_get:
 ;	Custom software interrupt (0x80)
 ;	No PIC EOI needed: software interrupts do not use PIC in-service state.
 interrupt:
+	cli
 	push	si
 	mov	si, test
 	call	print
 	pop	si
+	sti
 	iret
 
 ; --------------------------------
@@ -342,43 +427,6 @@ divisionbyzero:
 	pop	si
 	jmp	misc
 
-; --------------------------------
-;	Timer handler (INT 0x1c, called by BIOS INT 8 handler)
-;	BIOS INT 8 already sends EOI to PIC1; no EOI needed here.
-timer:
-	push	si
-	push	ax
-	push	bx
-	push	cx
-	push	dx
-	push	ds
-	xor	ax, ax			; reset ax
-	mov	ds, ax			; set ds to 0 for proper timer interrupt handling
-	xor	bx, bx
-	xor	dx, dx
-	mov	bx, [ticks]
-	inc	bx
-	mov	ax, bx
-	div	word [divisor]
-	cmp	dx, 0
-	jne	.end
-	call	ring_buffer_get		; check for pending scancode
-	cmp	al, 0
-	je	.end
-	push	si
-	push	msg_rb_key		; print key indicator if scancode is pending
-	call	println
-	pop	cx
-	pop	si
-.end:
-	mov	[ticks], bx
-	pop	ds
-	pop	dx
-	pop	cx
-	pop	bx
-	pop	ax
-	pop	si
-	iret
 
 ; --------------------------------
 ;	Keyboard handler (IRQ1, master PIC)
@@ -428,9 +476,11 @@ crs:
 
 section .data
 
+process_control_table: dw 0x500 	;times 8 dw 0		; space for 8 process control blocks (16 bytes each)	
+
 ;	ascii codes:
-;	0x0d = CR (carriage return)
-;	0x0a = LF (line feed)
+;	0x0d = CR = 13 (carriage return)
+;	0x0a = LF = 10 (line feed)
 msg_boot2_start:	db	"[BOOT2] Stage 2 initialized at 0x8000",13,10,0
 msg_idt_setup:		db	"[BOOT2] Setting up interrupt handlers...",13,10,0
 msg_idt_done:		db	"[BOOT2] IDT setup complete",13,10,0
@@ -450,9 +500,14 @@ done:			db	"Interrupt done",13,10,0
 result:			times 2	db	0
 ticks:			dw	1
 divisor:		dw	0x12	; 18
+sched_flag:		db	0		; set to 1 by timer ISR, polled by main loop
+current_process:	db	0		; 0 = process2 next, 1 = process1 next
 sched:			db	"Change task interrupt",13,10,0
+timermsg:		db	"Timer interrupt",13,10,0
 keyb:			db	"Some key pressed",13,10,0
 keydefault:		db 	"Another key pressed", 13, 10, 0
+hest:			db	"H",0
+fest:			db	"F",0
 buffer:			times	128 db 0	; string buffer
 
 ; Debug string for ring buffer activity (NUL-terminated)
