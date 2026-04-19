@@ -88,6 +88,24 @@ pcb_init:
 	mov	word  [si + PCB_DS],    0x0000
 	mov	word  [si + PCB_ES],    0x0000
 
+	; Process 2: process3 (clock) entry point
+	add	si, PCB_SIZE
+	mov	byte  [si + PCB_STATE], 1	; ready
+	mov	word  [si + PCB_IP],    process3
+	mov	word  [si + PCB_CS],    0x0000
+	mov	word  [si + PCB_FLAGS], 0x0202	; IF set
+	mov	word  [si + PCB_SP],    PROC2_STACK_TOP
+	mov	word  [si + PCB_SS],    0x0000
+	mov	word  [si + PCB_AX],    0
+	mov	word  [si + PCB_BX],    0
+	mov	word  [si + PCB_CX],    0
+	mov	word  [si + PCB_DX],    0
+	mov	word  [si + PCB_SI],    0
+	mov	word  [si + PCB_DI],    0
+	mov	word  [si + PCB_BP],    PROC2_STACK_TOP
+	mov	word  [si + PCB_DS],    0x0000
+	mov	word  [si + PCB_ES],    0x0000
+
 	; 0xFF = sentinel: no process running yet, first switch loads process 0
 	mov	byte [current_process], 0xFF
 	ret
@@ -111,6 +129,74 @@ process2:
 .idle:
 	hlt
 	jmp	.idle
+
+; **********************
+; process3: RTC clock display in upper-right corner (row 0, col 72)
+; Reads BIOS RTC (INT 0x1A AH=02) and prints HH:MM:SS.
+; **********************
+process3:
+	; Read RTC time — CH=hours(BCD), CL=minutes(BCD), DH=seconds(BCD)
+	mov	ah, 0x02
+	int	0x1a
+	jc	.idle			; RTC not ready, skip
+
+	; Stash BCD values before we clobber regs
+	mov	[clock_hours], ch
+	mov	[clock_minutes], cl
+	mov	[clock_seconds], dh
+
+	; Save current cursor position (page 0)
+	mov	ah, 0x03
+	xor	bh, bh
+	int	0x10
+	push	dx			; save DH=row, DL=col
+
+	; Move cursor to upper-right corner
+	mov	ah, 0x02
+	xor	bh, bh
+	mov	dh, 0			; row 0
+	mov	dl, 72			; col 72  (8 chars: HH:MM:SS)
+	int	0x10
+
+	; Print hours
+	mov	al, [clock_hours]
+	call	print_bcd
+	mov	al, ':'
+	mov	ah, 0x0e
+	int	0x10
+	; Print minutes
+	mov	al, [clock_minutes]
+	call	print_bcd
+	mov	al, ':'
+	mov	ah, 0x0e
+	int	0x10
+	; Print seconds
+	mov	al, [clock_seconds]
+	call	print_bcd
+
+	; Restore original cursor position
+	pop	dx
+	mov	ah, 0x02
+	xor	bh, bh
+	int	0x10
+
+.idle:
+	hlt
+	jmp	process3		; re-read and update each wake
+
+; print_bcd: print AL as two BCD digits via BIOS teletype
+print_bcd:
+	push	ax
+	shr	al, 4			; high nibble
+	add	al, '0'
+	mov	ah, 0x0e
+	int	0x10
+	pop	ax
+	and	al, 0x0f		; low nibble
+	add	al, '0'
+	mov	ah, 0x0e
+	int	0x10
+	ret
 
 ; --------------------------------
 ;	Timer handler (INT 0x08 — IRQ 0, hooked directly)
@@ -199,9 +285,13 @@ timer:
 
 	mov	byte [si + PCB_STATE], 1	; mark old process as ready
 
-	; ---- Select next process (round-robin) ----
+	; ---- Select next process (round-robin over NUM_PROCS) ----
 	mov	al, byte [current_process]
-	xor	al, 1
+	inc	al
+	cmp	al, NUM_PROCS
+	jb	.set_next
+	xor	al, al			; wrap to 0
+.set_next:
 	mov	byte [current_process], al
 	jmp	.load_process
 
@@ -224,15 +314,22 @@ timer:
 	; Process 0 entry = process1, Process 1 entry = process2
 	mov	al, byte [current_process]
 	test	al, al
-	jnz	.load_p1
+	jnz	.not_p0
 	mov	word [si + PCB_IP], process1
 	mov	word [si + PCB_SP], PROC0_STACK_TOP
 	mov	word [si + PCB_BP], PROC0_STACK_TOP
 	jmp	.do_load
-.load_p1:
+.not_p0:
+	cmp	al, 1
+	jnz	.load_p2
 	mov	word [si + PCB_IP], process2
 	mov	word [si + PCB_SP], PROC1_STACK_TOP
 	mov	word [si + PCB_BP], PROC1_STACK_TOP
+	jmp	.do_load
+.load_p2:
+	mov	word [si + PCB_IP], process3
+	mov	word [si + PCB_SP], PROC2_STACK_TOP
+	mov	word [si + PCB_BP], PROC2_STACK_TOP
 .do_load:
 
 	; ---- Switch to new process's stack ----
@@ -614,7 +711,7 @@ fest:			db	"[P2] Hello from process 2",13,10,0
 ; **********************
 ticks:			dw	1
 divisor:		dw	0x12		; 18 (~18.2 ticks/sec)
-current_process:	db	0		; index of running process (0 or 1); 0xFF = idle sentinel
+current_process:	db	0		; index of running process (0..2); 0xFF = idle sentinel
 
 ; Process table: NUM_PROCS entries of PCB_SIZE bytes each
 proc_table:		times (NUM_PROCS * PCB_SIZE) db 0
@@ -631,6 +728,11 @@ rb_tail:		dw	0
 ; Used by enterstring (kept for future use)
 ; **********************
 result:			dw	0
+
+; Clock scratch (BCD values from RTC)
+clock_hours:		db	0
+clock_minutes:		db	0
+clock_seconds:		db	0
 
 section	.bss
 string:		resb	128

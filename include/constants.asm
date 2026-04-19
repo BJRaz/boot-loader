@@ -7,6 +7,7 @@ BOOT2_ADDR	equ 0x8000			; stage-2 load address
 STACK_TOP	equ 0x7c00 - 1			; main stack (grows downward from boot code)
 PROC0_STACK_TOP	equ 0x7800			; process 0 stack: 0x7700-0x7800
 PROC1_STACK_TOP	equ 0x7600			; process 1 stack: 0x7500-0x7600
+PROC2_STACK_TOP	equ 0x7400			; process 2 stack: 0x7300-0x7400
 
 ; Video / display
 VIDEO_MODE	equ 0x03			; 80x25 text mode

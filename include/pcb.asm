@@ -18,7 +18,7 @@ PCB_BP		equ	23	; word: saved BP
 PCB_DS		equ	25	; word: saved DS
 PCB_ES		equ	27	; word: saved ES
 PCB_SIZE	equ	29	; total bytes per entry
-NUM_PROCS	equ	2
+NUM_PROCS	equ	3
 
 ; **********************
 ; ISR stack frame offsets (after pusha-style push sequence)
