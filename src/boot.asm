@@ -75,15 +75,12 @@ start:
 	mov	bl, VRAM_ATTR	; background blue, foreground light gray
 	int	BIOS_VIDEO_SERVICE			; interrupt 10h - video services
 	
-	mov	[databuffer], word BOOT2_ADDR
 				; http://staff.ustc.edu.cn/~xyfeng/research/cos/resources/BIOS/Resources/assembly/int1c.html
 	sti			; set interrupt flag
 
 	call	diskops
 
 	jmp	BOOT2_ADDR		; jump to boot2 stage
-
-	jmp	halt_loop
 
 ; DISK OPERATIONS:
 ; read from floppy
@@ -117,12 +114,12 @@ diskops:
 	mov	cl, SECTOR	; sector number (2 - boot sector is 1)
 	mov	dh, HEAD	; head/side number
 	mov	dl, DRIVE	; drive number
-	mov	bx, 0
+	xor	bx, bx
 	mov	es, bx		; set es = 0
 	mov	bx, [databuffer]; set bx = address (ES:BX = 0:offset)
 	int 	BIOS_DISK_SERVICE	
 
-	cmp	ah, 0
+	test	ah, ah
 	jz	.diskreadok
 
 	; Debug: Print disk read error
@@ -161,6 +158,6 @@ msg_disk_ok:		db	"[BOOT] Boot2 loaded successfully",13,10,0
 msg_disk_error:		db	"[BOOT] ERROR: Failed to read disk!",13,10,0
 msg_boot2_jump:		db	"[BOOT] Jumping to stage 2 at 0x8000...",13,10,0
 readok:			db 	"Disk read ok",13,10,0
-databuffer:		dw	0	
+databuffer:		dw	BOOT2_ADDR
 times			510 - ($-$$)	db 0
 dw	0xaa55
