@@ -102,8 +102,7 @@ section .text
 	sti				; enable interrupts
 	int	0x80			; test: call custom interrupt handler
 
-	jmp	misc
-
+	; fall through to main initialization
 misc:
 	mov	si, prompt
 	call	print
@@ -179,7 +178,6 @@ process2:
 	call	print
 .idle:
 	hlt
-	jmp	.idle
 	jmp	.idle
 
 ; --------------------------------
@@ -687,51 +685,40 @@ crs:
 
 section .data
 
-; (process_control_table removed - replaced by proc_table with PCB layout)
-
-;	ascii codes:
-;	0x0d = CR = 13 (carriage return)
-;	0x0a = LF = 10 (line feed)
-msg_boot2_start:	db	"[BOOT2] Stage 2 initialized at 0x8000",13,10,0
-msg_idt_setup:		db	"[BOOT2] Setting up interrupt handlers...",13,10,0
-msg_idt_done:		db	"[BOOT2] IDT setup complete",13,10,0
-msg_interrupts_enabled:	db	"[BOOT2] Interrupts enabled",13,10,0
-readok:			db 	"read ok",0x0d,0x0a,0
-cr:			db 	0x0d,0x0a,0
-halted:			db 	"System halted",0
-msg:			db 	"Hello from Brians boot-sector",0x0D,0x0A,0
-msg2:			db 	"Message no. 2...",0x0D,0x0A,0
-menu:			db 	"1 for enter text, q for exit",0x0d,0x0a,0
-prompt:			db 	"> ",0
-bell:			db	0x07,0
-procedure: 		dw 	0x0
+; **********************
+; Strings
+; **********************
+cr:			db	0x0d,0x0a,0
+prompt:			db	"> ",0
 test:			db	"Called from 0x80 interrupt (internal test)",13,10,0
-div0:			db 	"Division by zero exception!",13,10,0
-done:			db	"Interrupt done",13,10,0
-result:			times 2	db	0
+div0:			db	"Division by zero exception!",13,10,0
+keyb:			db	"Some key pressed",13,10,0
+keydefault:		db	"Another key pressed",13,10,0
+hest:			db	"[P1] Hello from process 1",13,10,0
+fest:			db	"[P2] Hello from process 2",13,10,0
+
+; **********************
+; Scheduler state
+; **********************
 ticks:			dw	1
-divisor:		dw	0x12	; 18
-sched_flag:		db	0		; set to 1 by timer ISR, polled by main loop
-current_process:	db	0		; index of currently running process (0 or 1)
+divisor:		dw	0x12		; 18 (~18.2 ticks/sec)
+current_process:	db	0		; index of running process (0 or 1); 0xFF = idle sentinel
 
 ; Process table: NUM_PROCS entries of PCB_SIZE bytes each
 proc_table:		times (NUM_PROCS * PCB_SIZE) db 0
-sched:			db	"Change task interrupt",13,10,0
-timermsg:		db	"Timer interrupt",13,10,0
-keyb:			db	"Some key pressed",13,10,0
-keydefault:		db 	"Another key pressed", 13, 10, 0
-hest:			db	"[P1] Hello from process 1",13,10,0
-fest:			db	"[P2] Hello from process 2",13,10,0
-buffer:			times	128 db 0	; string buffer
 
-; Debug string for ring buffer activity (NUL-terminated)
-msg_rb_key:		db	"Key in buffer",13,10,0
+; **********************
+; Ring buffer storage
+; Placed after string literals to prevent write-through corruption.
+; **********************
+rb:			times RB_SIZE db 0
+rb_head:		dw	0
+rb_tail:		dw	0
 
-; Ring buffer storage - placed after all string literals to prevent
-; write-through corruption of adjacent NUL terminators.
-rb:			times RB_SIZE db 0	; circular byte buffer
-rb_head:		dw	0		; next write index (0..RB_SIZE-1)
-rb_tail:		dw	0		; next read index  (0..RB_SIZE-1)
+; **********************
+; Used by enterstring (kept for future use)
+; **********************
+result:			dw	0
 
 section	.bss
 string:		resb	128
