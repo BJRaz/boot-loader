@@ -1,21 +1,88 @@
 # boot-loader
-An extremely simple boot-loader - just as a learning project
 
+A two-stage 16-bit real-mode bootloader written in NASM as a learning project.
 
-## build on Linux
+## Overview
 
-Run as root or "sudo" build_boot.sh
+- **Stage 1**: `src/boot.asm` (`org 0x7c00`)
+	- Builds to `build/obj/boot.bin` (boot sector)
+	- Initializes basic runtime state
+	- Reads stage 2 from disk using BIOS `int 0x13`
+	- Jumps to stage 2 at `0x8000`
 
-The script use the NASM assembler, and produces two files:
+- **Stage 2**: `src/boot2.asm` (`org 0x8000`)
+	- Builds to `build/obj/boot2.bin`
+	- Sets up IVT handlers (including direct IRQ0 timer hook on `INT 0x08`)
+	- Demonstrates simple PCB-based task switching between two processes
 
-* an image file - floppy.img - use that in a floppy-device in your preferred virtual/emulated setup e.g. virtualbox.
+- **Shared print helpers**: `include/print.asm`
+	- Always provides: `print`, `println`
+	- Conditionally provides `printf` via `%ifdef INCLUDE_PRINTF`
 
-* a binary file - boot.bin - use that to write to a disk, cd-rom etc, or use in a virtural/emulated setup.
+## Build
 
-## Prepare floppy.img with data to read 
+Use the Makefile-driven workflow:
 
-* dd if=test.txt of=floppy.img bs=512 seek=1 conv=notrunc
+```bash
+make clean && make
+```
 
-This will put the contents of test.txt, at second sector on the floppy image. The program will then read the sector
-and place content at memory location 0x7e00
+Build outputs:
+
+- `build/obj/boot.bin`
+- `build/obj/boot2.bin`
+- `floppy.img` (1.44MB, 2880 sectors)
+
+Image layout:
+
+- Sector 0: `boot.bin`
+- Sector 1+: `boot2.bin`
+
+## Run
+
+### QEMU
+
+```bash
+make run
+```
+
+### VirtualBox
+
+```bash
+make run-vbox
+```
+
+This attaches `floppy.img` to VM `boot-loader`, enables debug provider `gdb`, and starts the VM GUI.
+
+## Stage 2 size vs Stage 1 read window
+
+Stage 1 currently uses:
+
+- `SECTORS_TO_READ equ 4` in `src/boot.asm`
+
+That means stage 1 loads **2048 bytes** max from stage 2 (`4 * 512`).
+
+If `boot2.bin` grows beyond this limit, update `SECTORS_TO_READ` (or add a build-time size gate) or stage 2 will be truncated at boot.
+
+## Current scheduler behavior
+
+- Timer IRQ (`INT 0x08`) is hooked directly.
+- Timer ISR sends EOI to PIC1.
+- Scheduler tracks process state in a manual PCB table (no NASM `struc`).
+- Two demo processes print visible lines alternately.
+
+## `printf` support
+
+When `INCLUDE_PRINTF` is defined before `%include "print.asm"`, `printf` supports:
+
+- `%s` string
+- `%c` character
+- `%x` 16-bit hex
+- `%d` unsigned decimal
+- `\n` newline escape (CR/LF)
+
+## Notes
+
+- Prefer `make clean && make` for verification.
+- `build_boot.sh` is legacy; use Makefile targets instead.
 
