@@ -148,7 +148,7 @@ process3:
 	; Save current cursor position (page 0)
 	mov	ah, 0x03
 	xor	bh, bh
-	int	0x10
+	int	BIOS_VIDEO_SERVICE
 	push	dx			; save DH=row, DL=col
 
 	; Move cursor to upper-right corner
@@ -156,20 +156,20 @@ process3:
 	xor	bh, bh
 	mov	dh, 0			; row 0
 	mov	dl, 72			; col 72  (8 chars: HH:MM:SS)
-	int	0x10
+	int	BIOS_VIDEO_SERVICE
 
 	; Print hours
 	mov	al, [clock_hours]
 	call	print_bcd
 	mov	al, ':'
 	mov	ah, 0x0e
-	int	0x10
+	int	BIOS_VIDEO_SERVICE
 	; Print minutes
 	mov	al, [clock_minutes]
 	call	print_bcd
 	mov	al, ':'
 	mov	ah, 0x0e
-	int	0x10
+	int	BIOS_VIDEO_SERVICE
 	; Print seconds
 	mov	al, [clock_seconds]
 	call	print_bcd
@@ -178,7 +178,7 @@ process3:
 	pop	dx
 	mov	ah, 0x02
 	xor	bh, bh
-	int	0x10
+	int	BIOS_VIDEO_SERVICE
 
 .idle:
 	hlt
@@ -190,12 +190,12 @@ print_bcd:
 	shr	al, 4			; high nibble
 	add	al, '0'
 	mov	ah, 0x0e
-	int	0x10
+	int	BIOS_VIDEO_SERVICE
 	pop	ax
 	and	al, 0x0f		; low nibble
 	add	al, '0'
 	mov	ah, 0x0e
-	int	0x10
+	int	BIOS_VIDEO_SERVICE
 	ret
 
 ; --------------------------------
@@ -420,7 +420,7 @@ enterstring:
 
 .echo:				; echo char to screen
 	mov	ah,0x0e
-	int	0x10		; write char to screen, advances cursor
+	int	BIOS_VIDEO_SERVICE		; write char to screen, advances cursor
 	inc	cl		; increment di
 	jmp	.loop
 .sk:
@@ -431,7 +431,7 @@ enterstring:
 	jz	.rightarrow
 
 	mov	ah,0x0e
-	int	0x10
+	int	BIOS_VIDEO_SERVICE
 	 ; does nothing at this point
 	jmp	.loop		; enter new char...
 .leftarrow:
@@ -446,15 +446,15 @@ enterstring:
 	dec	cl
 	mov	al,0x08		; insert backspace
 	mov	ah,0x0e
-	int	0x10
+	int	BIOS_VIDEO_SERVICE
 	jmp	.loop
 .rightarrow:
 	push	cx
 	mov	ah,0x03		; get cursor pos
-	int	0x10
+	int	BIOS_VIDEO_SERVICE
 	inc	dl		; inc position by one
 	mov	ah,0x02		; set new position
-	int	0x10
+	int	BIOS_VIDEO_SERVICE
 	pop	cx
 	inc	cl
 	jmp	.loop
@@ -469,17 +469,17 @@ enterstring:
 
 	mov	al,0x08		; print backspace to screen
 	mov	ah,0x0e
-	int	0x10
+	int	BIOS_VIDEO_SERVICE
 
 	mov	al,' '		; print ' ' to screen (erases char)
 	mov	[si], word 0
 	dec	si
 	mov	ah,0x0e
-	int	0x10
+	int	BIOS_VIDEO_SERVICE
 
 	mov	al,0x08		; reprint backspace to screen
 	mov	ah,0x0e
-	int	0x10
+	int	BIOS_VIDEO_SERVICE
 
 	jmp	.loop
 
@@ -487,12 +487,12 @@ enterstring:
 	mov	[si],al		; at this point al = 0x0D
 	inc	si
 	mov	ah,0x0e
-	int	0x10		; echo char
+	int	BIOS_VIDEO_SERVICE		; echo char
 	mov 	al,0x0a
 	mov	[si],al		; add line feed
 	inc	si
 	mov	ah,0x0e
-	int	0x10
+	int	BIOS_VIDEO_SERVICE
 	cmp	cl,0
 	jz	misc
 	mov	si,string

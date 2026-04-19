@@ -11,7 +11,7 @@ print:
 	or	al, al			; test if AL is zero
 	jz	.out
 	mov	ah, 0x0e		; function code: print char
-	int	0x10			; BIOS video interrupt
+	int	BIOS_VIDEO_SERVICE	; BIOS video interrupt
 	jmp	print
 .out:
 	ret
@@ -64,17 +64,17 @@ printf:
 	push    ax
 	mov     ah, 0x0e
 	mov     al, 0x5C        ; backslash
-	int     0x10
+	int     BIOS_VIDEO_SERVICE
 	pop     ax
 	jmp     .print_char
 
 .print_newline:
 	mov     ah, 0x0e
 	mov     al, 13
-	int     0x10
+	int     BIOS_VIDEO_SERVICE
 	mov     ah, 0x0e
 	mov     al, 10
-	int     0x10
+	int     BIOS_VIDEO_SERVICE
 	jmp     .next_char
 
 .format_spec:
@@ -92,9 +92,9 @@ printf:
 	; Unknown specifier, just print as is
 	mov     ah, 0x0e
 	mov     al, '%'
-	int     0x10
+	int     BIOS_VIDEO_SERVICE
 	mov     ah, 0x0e
-	int     0x10
+	int     BIOS_VIDEO_SERVICE
 	jmp     .next_char
 
 .print_string:
@@ -109,7 +109,7 @@ printf:
 .print_char_arg:
 	mov     al, [di]        ; get char argument
 	mov     ah, 0x0e
-	int     0x10
+	int     BIOS_VIDEO_SERVICE
 	inc     di              ; advance to next argument
 	jmp     .next_char
 
@@ -127,7 +127,7 @@ printf:
 	and     bl, 0x0f
 	mov     al, [si + bx]
 	mov     ah, 0x0e
-	int     0x10
+	int     BIOS_VIDEO_SERVICE
 	pop     ax              ; restore rotated value (AH intact)
 	loop    .print_hex_loop
 	pop     si
@@ -152,14 +152,14 @@ printf:
 	pop     ax              ; digit value in AL
 	add     al, '0'
 	mov     ah, 0x0e
-	int     0x10
+	int     BIOS_VIDEO_SERVICE
 	loop    .dec_print
 	pop     si
 	jmp     .next_char
 
 .print_char:
 	mov     ah, 0x0e
-	int     0x10
+	int     BIOS_VIDEO_SERVICE
 	jmp     .next_char
 
 .done:
