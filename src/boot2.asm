@@ -96,11 +96,15 @@ halt:
 .idle:
 	jmp	halt
 
+processtable:
+	times 8 dw 0		; space for 8 process control blocks (16 bytes each)
+
 ; PROCESSES
 ; TEMP solution: For simplicity we just have two processes that print different characters in an infinite loop.
 process1:
-	mov	si, hest
-	call	print		; print -> calls BIOS int 0x10.
+	push [procedure]
+	push hest
+	call printf 		; print -> calls BIOS int 0x10.
 	; jmp	process1	; this will cause process1 to print 'H' repeatedly, never returning to main loop to allow process2 to run. We will fix this in the next stage by implementing a simple scheduler that switches between processes on timer interrupts.
 	; some how exit this process and return to main loop, which will then jump to process2
 	jmp halt
@@ -171,6 +175,7 @@ timer:
 
 
 
+%define INCLUDE_PRINTF
 %include "print.asm"
 
 ; enter string
@@ -493,7 +498,7 @@ msg2:			db 	"Message no. 2...",0x0D,0x0A,0
 menu:			db 	"1 for enter text, q for exit",0x0d,0x0a,0
 prompt:			db 	"> ",0
 bell:			db	0x07,0
-procedure: 		db 	0x0
+procedure: 		dw 	0x0
 test:			db	"Called from 0x80 interrupt (internal test)",13,10,0
 div0:			db 	"Division by zero exception!",13,10,0
 done:			db	"Interrupt done",13,10,0
@@ -506,7 +511,7 @@ sched:			db	"Change task interrupt",13,10,0
 timermsg:		db	"Timer interrupt",13,10,0
 keyb:			db	"Some key pressed",13,10,0
 keydefault:		db 	"Another key pressed", 13, 10, 0
-hest:			db	"H",0
+hest:			db	"H 0x%x",0
 fest:			db	"F",0
 buffer:			times	128 db 0	; string buffer
 

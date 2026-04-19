@@ -30,3 +30,95 @@ println:
 	mov	sp, bp			; restore stack pointer
 	pop	bp				; return to caller
 	ret
+
+%ifdef INCLUDE_PRINTF
+	; printf: Print formatted string with %s, %c, and %x support
+	; Parameters: return address, format string pointer, ... (args pushed in order)
+	; Stack: [SP+0] = return address, [SP+2] = format string pointer, [SP+4+] = args
+	; Clobbers: AX, BX, CX, DX, SI, DI
+
+printf:
+	push    bp
+	mov     bp, sp
+	push    si
+	push    di
+
+	mov     si, [bp+4]      ; SI = format string pointer
+	lea     di, [bp+6]      ; DI = pointer to first argument
+
+.next_char:
+	lodsb                   ; AL = [SI], SI++
+	or      al, al
+	jz      .done
+
+	cmp     al, '%'
+	jne     .print_char
+
+	; Handle format specifier
+	lodsb                   ; AL = next char
+	cmp     al, 's'
+	je      .print_string
+	cmp     al, 'c'
+	je      .print_char_arg
+	cmp     al, 'x'
+	je      .print_hex
+
+	; Unknown specifier, just print as is
+	mov     ah, 0x0e
+	mov     al, '%'
+	int     0x10
+	mov     ah, 0x0e
+	int     0x10
+	jmp     .next_char
+
+.print_string:
+	mov     bx, [di]        ; get pointer to string argument
+	push    si              ; preserve SI
+	mov     si, bx
+	call    print
+	pop     si
+	add     di, 2           ; advance to next argument
+	jmp     .next_char
+
+.print_char_arg:
+	mov     al, [di]        ; get char argument
+	mov     ah, 0x0e
+	int     0x10
+	inc     di              ; advance to next argument
+	jmp     .next_char
+
+.print_hex:
+	mov     ax, [di]        ; get word argument to print as hex
+	add     di, 2
+	push    si
+	mov     cx, 4           ; 4 hex digits for 16-bit value
+	mov     si, hex_digits
+.print_hex_loop:
+	rol     ax, 4           ; high nibble to low nibble
+	push    ax              ; save full rotated value
+	xor     bx, bx
+	mov     bl, al
+	and     bl, 0x0f
+	mov     al, [si + bx]
+	mov     ah, 0x0e
+	int     0x10
+	pop     ax              ; restore rotated value (AH intact)
+	loop    .print_hex_loop
+	pop     si
+	jmp     .next_char
+
+.print_char:
+	mov     ah, 0x0e
+	int     0x10
+	jmp     .next_char
+
+.done:
+	pop     di
+	pop     si
+	mov     sp, bp
+	pop     bp
+	ret
+
+; Hex digit lookup table
+hex_digits: db '0123456789ABCDEF'
+%endif ; INCLUDE_PRINTF
