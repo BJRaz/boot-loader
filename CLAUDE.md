@@ -40,3 +40,9 @@ cd mcp-server && python3 -m venv .venv && .venv/bin/pip install -r requirements.
 - Boot signature is `dw 0xaa55` at line 161 of `src/boot.asm` — this produces bytes `0x55 0xAA` at offsets 510–511 as required by the BIOS. Do **not** write `dw 0x55aa` (reversed byte order).
 - All screen output uses BIOS teletype (`int 0x10, ah=0x0e`). There is no serial output — `-nographic` in QEMU will suppress all visible output.
 - Do not change the `org` addresses (`0x7c00` / `0x8000`) without updating the corresponding disk read target in Stage 1.
+
+## Claude instructions
+Keep response short and concise unless instructed otherwize
+Do not generale documentation - user will instruct explicit
+As this point, brewfile is installed in "$home/dotfiles/Brewfile"
+
